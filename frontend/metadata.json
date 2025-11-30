@@ -1,0 +1,7 @@
+{
+  "name": "Akompta AI",
+  "description": "An intelligent financial management web application for small businesses, featuring voice interaction and AI-driven analytics.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
