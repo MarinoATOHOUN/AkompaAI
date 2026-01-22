@@ -2,8 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { Screen, Transaction, UserProfile } from './types';
 import BottomNav from './components/BottomNav';
-import { RECENT_TRANSACTIONS } from './constants';
 import { MenuOverlay } from './components/Shared';
+import { useTransactions } from './hooks';
 
 // Screens
 import { LoginScreen, RegisterScreen, RecoveryEmailScreen, RecoveryCodeScreen } from './screens/AuthScreens';
@@ -22,9 +22,16 @@ import GuideScreen from './screens/GuideScreen';
 import SupportScreen from './screens/SupportScreen';
 import { PrivacyScreen, TermsScreen, SecurityPrivacyScreen, DataSecurityScreen, BusinessTermsScreen } from './screens/InfoScreens';
 
+import { useAuth } from './context/AuthContext';
+import { Loader2 } from 'lucide-react';
+
 const App: React.FC = () => {
-  const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.LANDING);
-  const [transactions, setTransactions] = useState<Transaction[]>(RECENT_TRANSACTIONS);
+  const { user, loading: authLoading } = useAuth();
+  const [currentScreen, setCurrentScreen] = useState<Screen>(() => {
+    const savedScreen = localStorage.getItem('akompta_current_screen');
+    return (savedScreen as Screen) || Screen.LANDING;
+  });
+  const { data: transactions, addTransaction: addTransactionToBackend } = useTransactions();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile>({
     name: 'Akompta Admin',
@@ -37,7 +44,7 @@ const App: React.FC = () => {
     location: 'Cotonou, Bénin',
     ifu: '123456789000'
   });
-  
+
   // Dark Mode State
   const [isDarkMode, setIsDarkMode] = useState(() => {
     // Check local storage or system preference
@@ -55,6 +62,30 @@ const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
+  // Persist current screen
+  useEffect(() => {
+    localStorage.setItem('akompta_current_screen', currentScreen);
+  }, [currentScreen]);
+
+  // Redirect based on auth state
+  useEffect(() => {
+    if (!authLoading) {
+      const publicScreens = [
+        Screen.LANDING, Screen.LOGIN, Screen.REGISTER, Screen.RECOVERY_EMAIL, Screen.RECOVERY_CODE,
+        Screen.PRIVACY, Screen.TERMS, Screen.SECURITY_PRIVACY, Screen.DATA_SECURITY, Screen.BUSINESS_TERMS
+      ];
+      const isPublicScreen = publicScreens.includes(currentScreen);
+      const authScreens = [Screen.LANDING, Screen.LOGIN, Screen.REGISTER, Screen.RECOVERY_EMAIL, Screen.RECOVERY_CODE];
+      const isAuthFlowScreen = authScreens.includes(currentScreen);
+
+      if (user && isAuthFlowScreen) {
+        setCurrentScreen(Screen.DASHBOARD);
+      } else if (!user && !isPublicScreen) {
+        setCurrentScreen(Screen.LANDING);
+      }
+    }
+  }, [user, authLoading]);
+
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode);
   };
@@ -68,12 +99,12 @@ const App: React.FC = () => {
     setIsMenuOpen(!isMenuOpen);
   };
 
-  const handleAddTransaction = (newTx: Omit<Transaction, 'id'>) => {
-    const transaction: Transaction = {
-      id: Date.now().toString(),
-      ...newTx
-    };
-    setTransactions(prev => [transaction, ...prev]);
+  const handleAddTransaction = async (newTx: Omit<Transaction, 'id'>) => {
+    try {
+      await addTransactionToBackend(newTx);
+    } catch (error) {
+      console.error("Failed to add transaction:", error);
+    }
   };
 
   const renderScreen = () => {
@@ -101,9 +132,9 @@ const App: React.FC = () => {
       case Screen.ADS:
         return <AdsScreen onNavigate={navigate} onToggleMenu={toggleMenu} />;
       case Screen.PROFILE:
-        return <ProfileScreen 
-          onNavigate={navigate} 
-          onToggleMenu={toggleMenu} 
+        return <ProfileScreen
+          onNavigate={navigate}
+          onToggleMenu={toggleMenu}
           userProfile={userProfile}
           onUpdateProfile={setUserProfile}
         />;
@@ -138,26 +169,37 @@ const App: React.FC = () => {
   const authScreens = [Screen.LANDING, Screen.LOGIN, Screen.REGISTER, Screen.RECOVERY_EMAIL, Screen.RECOVERY_CODE];
   const shouldShowStandardNav = !authScreens.includes(currentScreen);
 
+  if (authLoading) {
+    return (
+      <div className="w-full h-[100dvh] flex items-center justify-center bg-[#dcece6] dark:bg-gray-900">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
+          <p className="text-primary font-medium animate-pulse">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`${isDarkMode ? 'dark' : ''} w-full h-[100dvh] md:h-[844px] max-w-md mx-auto`}>
-        <div className="w-full h-full bg-[#dcece6] dark:bg-gray-900 relative overflow-hidden md:rounded-[40px] shadow-2xl flex flex-col transition-colors duration-300">
-          <MenuOverlay 
-            isOpen={isMenuOpen} 
-            onClose={() => setIsMenuOpen(false)} 
-            onNavigate={navigate} 
-            userProfile={userProfile}
-          />
-          
-          {/* Content Area */}
-          <div className="flex-1 h-full w-full overflow-hidden relative">
-              {renderScreen()}
-          </div>
-          
-          {/* Navigation */}
-          {shouldShowStandardNav && (
-            <BottomNav currentScreen={currentScreen} onNavigate={navigate} />
-          )}
+      <div className="w-full h-full bg-[#dcece6] dark:bg-gray-900 relative overflow-hidden md:rounded-[40px] shadow-2xl flex flex-col transition-colors duration-300">
+        <MenuOverlay
+          isOpen={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onNavigate={navigate}
+          userProfile={userProfile}
+        />
+
+        {/* Content Area */}
+        <div className="flex-1 h-full w-full overflow-hidden relative">
+          {renderScreen()}
         </div>
+
+        {/* Navigation */}
+        {shouldShowStandardNav && (
+          <BottomNav currentScreen={currentScreen} onNavigate={navigate} />
+        )}
+      </div>
     </div>
   );
 };

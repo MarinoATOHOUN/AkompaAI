@@ -1,7 +1,16 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.html import format_html
-from .models import User, Product, Transaction, Budget, Ad
+from .models import User, Product, Transaction, Budget, Ad, AIInsight
+
+
+@admin.register(AIInsight)
+class AIInsightAdmin(admin.ModelAdmin):
+    """Administration des insights IA"""
+    list_display = ['user', 'created_at', 'context_hash']
+    list_filter = ['created_at', 'user']
+    search_fields = ['user__email', 'content']
+    readonly_fields = ['created_at', 'context_hash']
 
 
 @admin.register(User)

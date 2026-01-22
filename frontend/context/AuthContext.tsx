@@ -9,6 +9,7 @@ interface AuthContextType {
     register: (data: any) => Promise<void>;
     logout: () => void;
     updateProfile: (data: Partial<UserProfile>) => Promise<void>;
+    uploadAvatar: (file: File) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -53,6 +54,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const logout = () => {
         setAuthToken('');
         setRefreshToken('');
+        localStorage.removeItem('akompta_current_screen');
         setUser(null);
     };
 
@@ -61,8 +63,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(response.data);
     };
 
+    const uploadAvatar = async (file: File) => {
+        const response = await auth.uploadAvatar(file);
+        setUser(response.data);
+    };
+
     return (
-        <AuthContext.Provider value={{ user, loading, login, register, logout, updateProfile }}>
+        <AuthContext.Provider value={{ user, loading, login, register, logout, updateProfile, uploadAvatar }}>
             {children}
         </AuthContext.Provider>
     );

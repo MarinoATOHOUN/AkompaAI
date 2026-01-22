@@ -11,15 +11,17 @@ from datetime import timedelta, datetime
 from decimal import Decimal
 from django_filters.rest_framework import DjangoFilterBackend
 import csv
+import hashlib
+import json
 from django.http import HttpResponse
 
-from .models import Product, Transaction, Budget, Ad, Notification, SupportTicket
+from .models import Product, Transaction, Budget, Ad, Notification, SupportTicket, AIInsight
 from .serializers import (
     UserSerializer, RegisterSerializer, ChangePasswordSerializer,
     ProductSerializer, TransactionSerializer, TransactionSummarySerializer,
     BudgetSerializer, AdSerializer, OverviewAnalyticsSerializer,
-    BreakdownAnalyticsSerializer, KPISerializer, NotificationSerializer,
-    SupportTicketSerializer
+    BreakdownAnalyticsSerializer, KPISerializer, ActivityAnalyticsSerializer,
+    BalanceHistorySerializer, NotificationSerializer, SupportTicketSerializer
 )
 from .gemini_service import GeminiService
 import tempfile
@@ -41,7 +43,7 @@ class RegisterView(APIView):
             refresh = RefreshToken.for_user(user)
             
             return Response({
-                'user': UserSerializer(user).data,
+                'user': UserSerializer(user, context={'request': request}).data,
                 'tokens': {
                     'refresh': str(refresh),
                     'access': str(refresh.access_token),
@@ -100,7 +102,7 @@ class LoginView(APIView):
         refresh = RefreshToken.for_user(user)
         
         return Response({
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
             'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
@@ -113,14 +115,15 @@ class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        serializer = UserSerializer(request.user)
+        serializer = UserSerializer(request.user, context={'request': request})
         return Response(serializer.data)
     
     def patch(self, request):
         serializer = UserSerializer(
             request.user, 
             data=request.data, 
-            partial=True
+            partial=True,
+            context={'request': request}
         )
         if serializer.is_valid():
             serializer.save()
@@ -369,47 +372,107 @@ class AnalyticsView(APIView):
         return Response(serializer.data)
     
     def get_kpi(self, request):
-        """KPIs clés"""
+        """KPIs clés avec calcul de croissance"""
         user = request.user
         now = timezone.now()
         month_ago = now - timedelta(days=30)
+        two_months_ago = now - timedelta(days=60)
         
-        # Panier moyen (revenus / nombre de transactions de revenus)
-        income_transactions = Transaction.objects.filter(
-            user=user,
-            type='income',
-            date__gte=month_ago
+        # --- Période Actuelle (30 derniers jours) ---
+        current_income_tx = Transaction.objects.filter(
+            user=user, type='income', date__gte=month_ago
         )
+        current_total_income = current_income_tx.aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
+        current_count_income = current_income_tx.count()
+        current_avg_basket = current_total_income / current_count_income if current_count_income > 0 else Decimal('0.00')
         
-        total_income = income_transactions.aggregate(
-            total=Sum('amount')
-        )['total'] or Decimal('0.00')
+        current_marketing = Transaction.objects.filter(
+            user=user, type='expense', category__icontains='marketing', date__gte=month_ago
+        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
         
-        count_income = income_transactions.count()
-        average_basket = total_income / count_income if count_income > 0 else Decimal('0.00')
+        # --- Période Précédente (30 à 60 jours) ---
+        prev_income_tx = Transaction.objects.filter(
+            user=user, type='income', date__gte=two_months_ago, date__lt=month_ago
+        )
+        prev_total_income = prev_income_tx.aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
+        prev_count_income = prev_income_tx.count()
+        prev_avg_basket = prev_total_income / prev_count_income if prev_count_income > 0 else Decimal('0.00')
         
-        # MRR estimé (revenus du dernier mois)
-        estimated_mrr = total_income
+        prev_marketing = Transaction.objects.filter(
+            user=user, type='expense', category__icontains='marketing', date__gte=two_months_ago, date__lt=month_ago
+        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
         
-        # CAC (estimation simplifiée: dépenses marketing / nouveaux clients)
-        # Pour simplifier, on utilise les dépenses de catégorie "Marketing"
-        marketing_expenses = Transaction.objects.filter(
-            user=user,
-            type='expense',
-            category__icontains='marketing',
-            date__gte=month_ago
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        
-        # Estimation simplifiée du CAC
-        cac = marketing_expenses
-        
+        # --- Calcul des Croissances ---
+        def calc_growth(current, prev):
+            if prev == 0: return 100.0 if current > 0 else 0.0
+            return float(((current - prev) / prev) * 100)
+
         data = {
-            'average_basket': average_basket,
-            'estimated_mrr': estimated_mrr,
-            'cac': cac
+            'average_basket': current_avg_basket,
+            'average_basket_growth': calc_growth(current_avg_basket, prev_avg_basket),
+            'estimated_mrr': current_total_income,
+            'estimated_mrr_growth': calc_growth(current_total_income, prev_total_income),
+            'cac': current_marketing,
+            'cac_growth': calc_growth(current_marketing, prev_marketing)
         }
         
         serializer = KPISerializer(data)
+        return Response(serializer.data)
+
+    def get_activity(self, request):
+        """Graphique d'activité: Ventes des 7 derniers jours"""
+        user = request.user
+        now = timezone.now().date()
+        days = []
+        
+        # Récupérer les 7 derniers jours
+        for i in range(6, -1, -1):
+            day = now - timedelta(days=i)
+            total_sales = Transaction.objects.filter(
+                user=user,
+                type='income',
+                date=day
+            ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
+            
+            days.append({
+                'day': day.strftime('%a'), # Lun, Mar, etc.
+                'sales': total_sales
+            })
+            
+        serializer = ActivityAnalyticsSerializer(days, many=True)
+        return Response(serializer.data)
+
+    def get_balance_history(self, request):
+        """Historique du solde cumulé"""
+        user = request.user
+        # Récupérer toutes les transactions triées par date
+        transactions = Transaction.objects.filter(user=user).order_by('date')
+        
+        history = []
+        running_balance = Decimal('0.00')
+        
+        # Grouper par date pour éviter d'avoir trop de points si plusieurs transactions le même jour
+        daily_balances = {}
+        for t in transactions:
+            if t.type == 'income':
+                running_balance += t.amount
+            else:
+                running_balance -= t.amount
+            
+            daily_balances[t.date] = running_balance
+            
+        # Formater pour le frontend
+        for date in sorted(daily_balances.keys()):
+            history.append({
+                'date': date.strftime('%d/%m'),
+                'balance': daily_balances[date]
+            })
+            
+        # Si pas de transactions, ajouter un point à zéro
+        if not history:
+            history.append({'date': timezone.now().strftime('%d/%m'), 'balance': Decimal('0.00')})
+            
+        serializer = BalanceHistorySerializer(history, many=True)
         return Response(serializer.data)
 
 
@@ -432,6 +495,20 @@ def analytics_breakdown(request):
 def analytics_kpi(request):
     view = AnalyticsView()
     return view.get_kpi(request)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def analytics_activity(request):
+    view = AnalyticsView()
+    return view.get_activity(request)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def analytics_balance_history(request):
+    view = AnalyticsView()
+    return view.get_balance_history(request)
 
 
 # ========== BUDGETS ==========
@@ -512,20 +589,27 @@ class VoiceCommandView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
-        if 'audio' not in request.FILES:
-            return Response({'error': 'No audio file provided'}, status=status.HTTP_400_BAD_REQUEST)
-            
-        audio_file = request.FILES['audio']
+        audio_file = request.FILES.get('audio')
+        text_command = request.data.get('text')
         
-        try:
-            audio_bytes = audio_file.read()
-            mime_type = audio_file.content_type or 'audio/mp3'
+        if not audio_file and not text_command:
+            return Response({'error': 'No audio file or text command provided'}, status=status.HTTP_400_BAD_REQUEST)
             
+        try:
             service = GeminiService()
-            result = service.process_voice_command(audio_bytes, mime_type)
+            
+            if audio_file:
+                audio_bytes = audio_file.read()
+                mime_type = audio_file.content_type or 'audio/mp3'
+                result = service.process_voice_command(audio_bytes, mime_type)
+            else:
+                result = service.process_text_command(text_command)
+            
+            print(f"VoiceCommandView - Result Intent: {result.get('intent')}")
             
             if result.get('intent') == 'create_transaction':
                 data = result.get('data', {})
+                print(f"VoiceCommandView - Transaction Data: {data}")
                 
                 # Prepare data for serializer
                 transaction_data = {
@@ -542,6 +626,7 @@ class VoiceCommandView(APIView):
                 serializer = TransactionSerializer(data=transaction_data, context={'request': request})
                 
                 if serializer.is_valid():
+                    print("VoiceCommandView - Serializer is valid. Saving...")
                     serializer.save()
                     return Response({
                         'status': 'success',
@@ -549,10 +634,46 @@ class VoiceCommandView(APIView):
                         'transaction': serializer.data
                     })
                 else:
+                     print(f"VoiceCommandView - Serializer Errors: {serializer.errors}")
                      return Response({
                         'status': 'error',
                         'transcription': result.get('transcription'),
                         'message': 'Validation failed',
+                        'errors': serializer.errors
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+            elif result.get('intent') == 'create_product':
+                data = result.get('data', {})
+                print(f"VoiceCommandView - Product Data: {data}")
+                
+                product_data = {
+                    'name': data.get('name'),
+                    'price': data.get('price'),
+                    'unit': data.get('unit') or 'unité',
+                    'description': data.get('description') or '',
+                    'category': data.get('category') or 'stock',
+                    'stock_status': data.get('stock_status') or 'ok'
+                }
+                
+                # Map common AI terms to valid choices if needed
+                if product_data['stock_status'] == 'instock': product_data['stock_status'] = 'ok'
+                if product_data['stock_status'] == 'outofstock': product_data['stock_status'] = 'rupture'
+                
+                serializer = ProductSerializer(data=product_data, context={'request': request})
+                if serializer.is_valid():
+                    print("VoiceCommandView - Product Serializer is valid. Saving...")
+                    serializer.save()
+                    return Response({
+                        'status': 'success',
+                        'transcription': result.get('transcription'),
+                        'product': serializer.data
+                    })
+                else:
+                    print(f"VoiceCommandView - Product Serializer Errors: {serializer.errors}")
+                    return Response({
+                        'status': 'error',
+                        'transcription': result.get('transcription'),
+                        'message': 'Product validation failed',
                         'errors': serializer.errors
                     }, status=status.HTTP_400_BAD_REQUEST)
             
@@ -565,4 +686,45 @@ class VoiceCommandView(APIView):
             })
             
         except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AIInsightsView(APIView):
+    """Génération d'insights financiers via Gemini avec mise en mémoire en base de données"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        context_data = request.data.get('context', {})
+        
+        # Calculer un hash du contexte pour détecter les changements
+        context_str = json.dumps(context_data, sort_keys=True)
+        context_hash = hashlib.sha256(context_str.encode()).hexdigest()
+        
+        # Vérifier si un insight existe déjà pour ce contexte et cet utilisateur
+        existing_insight = AIInsight.objects.filter(
+            user=request.user, 
+            context_hash=context_hash
+        ).first()
+        
+        if existing_insight:
+            return Response({'insights': existing_insight.content, 'cached': True})
+        
+        try:
+            service = GeminiService()
+            insights = service.process_insights(context_data)
+            
+            # Sauvegarder le nouvel insight
+            AIInsight.objects.create(
+                user=request.user,
+                content=insights,
+                context_hash=context_hash
+            )
+            
+            return Response({'insights': insights, 'cached': False})
+        except Exception as e:
+            # En cas d'erreur de l'IA, essayer de renvoyer le dernier insight connu
+            last_insight = AIInsight.objects.filter(user=request.user).first()
+            if last_insight:
+                return Response({'insights': last_insight.content, 'cached': True, 'error_fallback': str(e)})
+                
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

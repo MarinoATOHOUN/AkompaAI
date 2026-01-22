@@ -5,8 +5,9 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     RegisterView, LoginView, ProfileView, ChangePasswordView,
     ProductViewSet, TransactionViewSet, BudgetViewSet, AdViewSet,
-    NotificationViewSet, SupportTicketViewSet, VoiceCommandView,
-    analytics_overview, analytics_breakdown, analytics_kpi
+    NotificationViewSet, SupportTicketViewSet, VoiceCommandView, AIInsightsView,
+    analytics_overview, analytics_breakdown, analytics_kpi, analytics_activity,
+    analytics_balance_history
 )
 
 # Router pour les ViewSets
@@ -30,10 +31,13 @@ urlpatterns = [
     path('analytics/overview/', analytics_overview, name='analytics-overview'),
     path('analytics/breakdown/', analytics_breakdown, name='analytics-breakdown'),
     path('analytics/kpi/', analytics_kpi, name='analytics-kpi'),
+    path('analytics/activity/', analytics_activity, name='analytics-activity'),
+    path('analytics/balance-history/', analytics_balance_history, name='analytics-balance-history'),
     
     # ===== ROUTER (Products, Transactions, Budgets, Ads) =====
     path('', include(router.urls)),
     
     # ===== VOICE AI =====
     path('voice-command/', VoiceCommandView.as_view(), name='voice-command'),
+    path('ai-insights/', AIInsightsView.as_view(), name='ai-insights'),
 ]

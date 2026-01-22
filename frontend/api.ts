@@ -1,7 +1,11 @@
 import axios from 'axios';
 import { UserProfile, Transaction, Product, Budget, Notification } from './types';
 
-const API_URL = 'https://clab2025.pythonanywhere.com/api';
+export const BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:8000'
+    : 'https://clab2025.pythonanywhere.com';
+
+const API_URL = `${BASE_URL}/api`;
 
 const api = axios.create({
     baseURL: API_URL,
@@ -70,7 +74,17 @@ export const auth = {
     getProfile: () => api.get<UserProfile>('/auth/me/'),
     updateProfile: (data: Partial<UserProfile>) => api.patch<UserProfile>('/auth/me/', data),
     changePassword: (data: any) => api.post('/auth/change-password/', data),
+    uploadAvatar: (file: File) => {
+        const formData = new FormData();
+        formData.append('avatar', file);
+        return api.patch<UserProfile>('/auth/me/', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+    },
 };
+
 
 export const products = {
     list: (params?: any) => api.get<{ results: Product[] }>('/products/', { params }),
@@ -115,14 +129,20 @@ export const analytics = {
     overview: () => api.get('/analytics/overview/'),
     breakdown: () => api.get('/analytics/breakdown/'),
     kpi: () => api.get('/analytics/kpi/'),
+    activity: () => api.get('/analytics/activity/'),
+    balanceHistory: () => api.get('/analytics/balance-history/'),
+    insights: (context: any) => api.post('/ai-insights/', { context }),
 };
 
 export const voice = {
-    send: (formData: FormData) => api.post('/voice-command/', formData, {
-        headers: {
-            'Content-Type': 'multipart/form-data',
-        },
-    }),
+    send: (data: FormData | { text: string }) => {
+        const isFormData = data instanceof FormData;
+        return api.post('/voice-command/', data, {
+            headers: {
+                'Content-Type': isFormData ? 'multipart/form-data' : 'application/json',
+            },
+        });
+    },
 };
 
 export default api;

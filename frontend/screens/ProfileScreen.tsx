@@ -2,9 +2,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Screen, UserProfile } from '../types';
 import { Header } from '../components/Shared';
-import { ChevronDown, DollarSign, Camera, Edit2, CreditCard, Save, Building2, MapPin, Mail, Phone, FileText, User, X, Briefcase } from 'lucide-react';
+import { ChevronDown, DollarSign, Camera, Edit2, CreditCard, Save, Building2, MapPin, Mail, Phone, FileText, User, X, Briefcase, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTransactionSummary } from '../hooks';
+import { auth, BASE_URL } from '../api';
 
 interface Props {
     onNavigate: (screen: Screen) => void;
@@ -14,7 +15,7 @@ interface Props {
 }
 
 const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile, onUpdateProfile }) => {
-    const { user, updateProfile } = useAuth();
+    const { user, updateProfile, uploadAvatar } = useAuth();
     const { summary } = useTransactionSummary();
 
     const [profileName, setProfileName] = useState(user?.first_name + ' ' + user?.last_name || userProfile.name);
@@ -24,8 +25,13 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
     const [isEditingBalance, setIsEditingBalance] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Default avatar URL
+    const getDefaultAvatar = (name: string) =>
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=14532d&color=fff&size=200`;
 
     // Edit Modal State - Use real user data
     const [editForm, setEditForm] = useState({
@@ -37,8 +43,24 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
         sector: user?.sector || '',
         location: user?.location || '',
         ifu: user?.ifu || '',
-        image: user?.avatar || userProfile.image
+        image: user?.avatar || ''
     });
+
+    // Computed profile image URL
+    const getFullImageUrl = (url: string | undefined) => {
+        if (!url) return null;
+        if (url.startsWith('http') || url.startsWith('data:')) return url;
+
+        // Ensure path starts with /media/ if it's a relative backend path
+        let path = url;
+        if (!path.includes('/media/') && !path.includes('media/')) {
+            path = `/media/${path.startsWith('/') ? path.substring(1) : path}`;
+        }
+
+        return `${BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+    };
+
+    const profileImageUrl = getFullImageUrl(user?.avatar) || editForm.image || getDefaultAvatar(profileName);
 
     useEffect(() => {
         if (user) {
@@ -53,7 +75,7 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
                 sector: user.sector || '',
                 location: user.location || '',
                 ifu: user.ifu || '',
-                image: user.avatar || userProfile.image
+                image: user.avatar || ''
             });
         }
     }, [user]);
@@ -68,16 +90,27 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
         fileInputRef.current?.click();
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
+            // Preview locally
             const reader = new FileReader();
             reader.onloadend = () => {
                 const result = reader.result as string;
-                setEditForm({ ...editForm, image: result });
-                // TODO: Upload to backend when image upload is implemented
+                setEditForm(prev => ({ ...prev, image: result }));
             };
             reader.readAsDataURL(file);
+
+            // Upload to backend
+            setIsUploadingAvatar(true);
+            try {
+                await uploadAvatar(file);
+            } catch (error) {
+                console.error('Error uploading avatar:', error);
+                alert('Erreur lors du téléchargement de la photo de profil.');
+            } finally {
+                setIsUploadingAvatar(false);
+            }
         }
     };
 
@@ -141,16 +174,30 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
                             className="w-24 h-24 rounded-full overflow-hidden border-4 border-white dark:border-gray-800 shadow-xl cursor-pointer relative"
                             onClick={handleImageClick}
                         >
-                            <img src={userProfile.image} className="w-full h-full object-cover" alt="Profile" />
+                            <img
+                                src={profileImageUrl}
+                                className={`w-full h-full object-cover ${isUploadingAvatar ? 'opacity-50' : ''}`}
+                                alt="Profile"
+                                onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    target.src = getDefaultAvatar(profileName);
+                                }}
+                            />
+                            {isUploadingAvatar && (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <Loader2 className="text-white animate-spin" size={24} />
+                                </div>
+                            )}
                             <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                 <Camera className="text-white" size={24} />
                             </div>
                         </div>
                         <button
                             onClick={handleImageClick}
-                            className="absolute bottom-0 right-0 bg-primary dark:bg-green-500 text-white p-1.5 rounded-full shadow-lg border-2 border-white dark:border-gray-900"
+                            disabled={isUploadingAvatar}
+                            className="absolute bottom-0 right-0 bg-primary dark:bg-green-500 text-white p-1.5 rounded-full shadow-lg border-2 border-white dark:border-gray-900 disabled:opacity-50"
                         >
-                            <Edit2 size={12} />
+                            {isUploadingAvatar ? <Loader2 size={12} className="animate-spin" /> : <Edit2 size={12} />}
                         </button>
                         <input
                             type="file"

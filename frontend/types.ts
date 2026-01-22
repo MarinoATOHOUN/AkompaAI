@@ -34,7 +34,15 @@ export interface UserProfile {
   sector?: string;
   location?: string;
   ifu?: string;
+  // Backend user fields
+  avatar?: string;
+  first_name?: string;
+  last_name?: string;
+  phone_number?: string;
+  account_type?: 'personal' | 'business';
+  business_name?: string;
 }
+
 
 export interface Product {
   id: string;
@@ -44,7 +52,7 @@ export interface Product {
   unit: string;
   image: string;
   stockStatus?: 'ok' | 'low' | 'rupture';
-  category: 'Vente' | 'Dépense' | 'Stock';
+  category: 'Vente' | 'Dépense' | 'Stock' | 'vente' | 'depense' | 'stock';
 }
 
 export interface Transaction {

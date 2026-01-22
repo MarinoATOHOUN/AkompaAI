@@ -1,10 +1,10 @@
 
 import React, { useState, useMemo } from 'react';
 import { Screen, Transaction } from '../types';
-import { CHART_DATA_WALLET } from '../constants';
 import { Header, Button } from '../components/Shared';
 import { ChevronDown, ArrowUpRight, ArrowDownLeft, Wallet, Calendar, X, Share2, FileText, Printer, Search, Plus, Save, Minus } from 'lucide-react';
-import { ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
+import { useAnalytics, useTransactionSummary } from '../hooks';
 
 interface Props {
   onNavigate: (screen: Screen) => void;
@@ -15,6 +15,8 @@ interface Props {
 }
 
 const WalletScreen: React.FC<Props> = ({ onNavigate, transactions, onToggleMenu, isDarkMode, onAddTransaction }) => {
+  const { balanceHistory, loading: analyticsLoading } = useAnalytics();
+  const { summary, loading: summaryLoading } = useTransactionSummary();
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [timeRange, setTimeRange] = useState<'Jour' | 'Semaine' | 'Mois' | 'Année'>('Mois');
@@ -25,18 +27,14 @@ const WalletScreen: React.FC<Props> = ({ onNavigate, transactions, onToggleMenu,
   const [txAmount, setTxAmount] = useState('');
   const [txCategory, setTxCategory] = useState('');
 
-  // Calculate Daily Summary (Today's activity)
-  const dailySummary = useMemo(() => {
-    const todayKeywords = ["aujourd'hui", "today", "maintenant"];
-    const todayTransactions = transactions.filter(t =>
-      todayKeywords.some(keyword => t.date.toLowerCase().includes(keyword))
-    );
+  // Use backend summary for balance
+  const totalBalance = summary?.balance ? parseFloat(summary.balance) : 0;
 
-    return {
-      income: todayTransactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0),
-      expense: todayTransactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.amount, 0)
-    };
-  }, [transactions]);
+  // Use backend summary for daily activity
+  const dailySummary = {
+    income: summary?.income_24h ? parseFloat(summary.income_24h) : 0,
+    expense: summary?.expenses_24h ? parseFloat(summary.expenses_24h) : 0
+  };
 
   // Filter transactions by Time Range first (used for Denominator in percentage calc)
   const transactionsInTimeRange = useMemo(() => {
@@ -109,7 +107,7 @@ const WalletScreen: React.FC<Props> = ({ onNavigate, transactions, onToggleMenu,
           <div class="summary">
              <div class="card">
                 <div class="card-label">Solde Actuel</div>
-                <div class="card-value">238.943 FCFA</div>
+                <div class="card-value">${totalBalance.toLocaleString()} FCFA</div>
              </div>
              <div class="card">
                 <div class="card-label">Transactions</div>
@@ -292,8 +290,8 @@ const WalletScreen: React.FC<Props> = ({ onNavigate, transactions, onToggleMenu,
               </div>
               <div>
                 <div className="text-primary dark:text-green-300 opacity-80 text-lg">Solde Total</div>
-                <div className="text-primary dark:text-white text-3xl font-bold">238.943 FCFA</div>
-                <div className="inline-block bg-[#4d7c6a] dark:bg-green-700 text-white text-xs px-2 py-0.5 rounded mt-1">+49,89%</div>
+                <div className="text-primary dark:text-white text-3xl font-bold">{totalBalance.toLocaleString()} FCFA</div>
+                <div className="inline-block bg-[#4d7c6a] dark:bg-green-700 text-white text-xs px-2 py-0.5 rounded mt-1">Actif</div>
               </div>
             </div>
 
@@ -304,7 +302,7 @@ const WalletScreen: React.FC<Props> = ({ onNavigate, transactions, onToggleMenu,
             {/* Chart Overlay */}
             <div className="h-40 w-full mb-2">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={CHART_DATA_WALLET}>
+                <AreaChart data={balanceHistory.length > 0 ? balanceHistory.map(item => ({ name: item.date, value: parseFloat(item.balance) })) : [{ name: '', value: 0 }]}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#14532d" stopOpacity={0.8} />
@@ -315,14 +313,25 @@ const WalletScreen: React.FC<Props> = ({ onNavigate, transactions, onToggleMenu,
                       <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
                     </linearGradient>
                   </defs>
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: '12px',
+                      backgroundColor: isDarkMode ? '#1f2937' : '#fff',
+                      border: 'none',
+                      fontSize: '12px',
+                      color: isDarkMode ? '#fff' : '#000'
+                    }}
+                    itemStyle={{ color: isDarkMode ? '#34d399' : '#14532d' }}
+                    labelStyle={{ color: isDarkMode ? '#9ca3af' : '#6b7280' }}
+                  />
                   <Area type="monotone" dataKey="value" stroke={isDarkMode ? '#34d399' : '#14532d'} strokeWidth={3} fillOpacity={1} fill={`url(#${isDarkMode ? 'colorValueDark' : 'colorValue'})`} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
 
             <div className="flex justify-between text-primary dark:text-green-300 text-xs font-medium">
-              <span>08/10/2024</span>
-              <span>08/11/2024</span>
+              <span>{balanceHistory.length > 0 ? balanceHistory[0].date : 'Début'}</span>
+              <span>{balanceHistory.length > 0 ? balanceHistory[balanceHistory.length - 1].date : 'Fin'}</span>
             </div>
           </div>
 
@@ -333,8 +342,8 @@ const WalletScreen: React.FC<Props> = ({ onNavigate, transactions, onToggleMenu,
                 key={range}
                 onClick={() => setTimeRange(range as any)}
                 className={`px-4 py-1 rounded-lg text-sm transition-all ${timeRange === range
-                    ? 'bg-white dark:bg-gray-800 shadow-sm font-bold opacity-100 scale-105'
-                    : 'opacity-60 hover:opacity-100'
+                  ? 'bg-white dark:bg-gray-800 shadow-sm font-bold opacity-100 scale-105'
+                  : 'opacity-60 hover:opacity-100'
                   }`}
               >
                 {range}

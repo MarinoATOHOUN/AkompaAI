@@ -218,20 +218,26 @@ export const useSupportTickets = () => {
 export const useAnalytics = () => {
     const [overview, setOverview] = useState<any[]>([]);
     const [breakdown, setBreakdown] = useState<any[]>([]);
+    const [activity, setActivity] = useState<any[]>([]);
+    const [balanceHistory, setBalanceHistory] = useState<any[]>([]);
     const [kpi, setKpi] = useState<any>(null);
     const [loading, setLoading] = useState(false);
 
     const fetchAnalytics = useCallback(async () => {
         setLoading(true);
         try {
-            const [overviewRes, breakdownRes, kpiRes] = await Promise.all([
+            const [overviewRes, breakdownRes, kpiRes, activityRes, balanceRes] = await Promise.all([
                 analytics.overview(),
                 analytics.breakdown(),
-                analytics.kpi()
+                analytics.kpi(),
+                analytics.activity(),
+                analytics.balanceHistory()
             ]);
             setOverview(overviewRes.data);
             setBreakdown(breakdownRes.data);
             setKpi(kpiRes.data);
+            setActivity(activityRes.data);
+            setBalanceHistory(balanceRes.data);
         } catch (err) {
             console.error(err);
         } finally {
@@ -243,5 +249,5 @@ export const useAnalytics = () => {
         fetchAnalytics();
     }, [fetchAnalytics]);
 
-    return { overview, breakdown, kpi, loading, refetch: fetchAnalytics };
+    return { overview, breakdown, kpi, activity, balanceHistory, loading, refetch: fetchAnalytics };
 };

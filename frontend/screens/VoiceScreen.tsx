@@ -103,6 +103,39 @@ const VoiceScreen: React.FC<Props> = ({ onNavigate, onAddTransaction, onToggleMe
     }
   };
 
+  const [manualInput, setManualInput] = useState('');
+
+  const handleManualSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualInput.trim() || isProcessing) return;
+
+    setIsProcessing(true);
+    setStatus("Traitement du texte...");
+    try {
+      const response = await voice.send({ text: manualInput });
+      const result = response.data;
+
+      if (result.status === 'success' && result.transaction) {
+        setTranscription(result.transcription);
+        setStatus("Transaction ajoutée !");
+        onAddTransaction(result.transaction);
+        setManualInput('');
+        setTimeout(() => {
+          setStatus("Appuyez pour parler");
+          setTranscription('');
+        }, 3000);
+      } else {
+        setTranscription(result.transcription || "Je n'ai pas compris.");
+        setStatus("Commande non reconnue");
+      }
+    } catch (error) {
+      console.error("Error processing text command:", error);
+      setStatus("Erreur serveur");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900 relative pb-24 transition-colors">
       {/* Top Menu */}
@@ -152,6 +185,32 @@ const VoiceScreen: React.FC<Props> = ({ onNavigate, onAddTransaction, onToggleMe
             </>
           )}
         </div>
+
+        {/* Manual Input Field (Temporary for testing) */}
+        {!isRecording && (
+          <form
+            onSubmit={handleManualSubmit}
+            className="mt-12 w-full max-w-xs px-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+          >
+            <div className="relative group">
+              <input
+                type="text"
+                value={manualInput}
+                onChange={(e) => setManualInput(e.target.value)}
+                placeholder="Ou tapez votre commande ici..."
+                className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl px-5 py-4 pr-12 text-gray-700 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent transition-all shadow-sm"
+              />
+              <button
+                type="submit"
+                disabled={!manualInput.trim() || isProcessing}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-xl bg-accent text-white disabled:opacity-50 disabled:bg-gray-300 dark:disabled:bg-gray-700 transition-all hover:scale-105 active:scale-95"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 7-7 7 7" /><path d="M12 19V5" /></svg>
+              </button>
+            </div>
+          </form>
+        )}
+
         <div className="absolute bottom-32 text-gray-400 text-sm font-medium">{status}</div>
       </div>
     </div>

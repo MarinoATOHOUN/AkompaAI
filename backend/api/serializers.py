@@ -208,8 +208,23 @@ class KPISerializer(serializers.Serializer):
     """Serializer pour les KPIs"""
     
     average_basket = serializers.DecimalField(max_digits=15, decimal_places=2)
+    average_basket_growth = serializers.FloatField(default=0.0)
     estimated_mrr = serializers.DecimalField(max_digits=15, decimal_places=2)
+    estimated_mrr_growth = serializers.FloatField(default=0.0)
     cac = serializers.DecimalField(max_digits=15, decimal_places=2)
+    cac_growth = serializers.FloatField(default=0.0)
+
+
+class ActivityAnalyticsSerializer(serializers.Serializer):
+    """Serializer pour l'activité hebdomadaire"""
+    day = serializers.CharField()
+    sales = serializers.DecimalField(max_digits=15, decimal_places=2)
+
+
+class BalanceHistorySerializer(serializers.Serializer):
+    """Serializer pour l'historique du solde"""
+    date = serializers.CharField()
+    balance = serializers.DecimalField(max_digits=15, decimal_places=2)
 
 
 class NotificationSerializer(serializers.ModelSerializer):

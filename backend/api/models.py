@@ -278,4 +278,20 @@ class SupportTicket(models.Model):
     
     def __str__(self):
         return f"{self.subject} - {self.status}"
+
+
+class AIInsight(models.Model):
+    """Modèle pour stocker les insights générés par l'IA"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ai_insights')
+    content = models.JSONField()  # Liste de phrases
+    context_hash = models.CharField(max_length=64)  # Hash des données utilisées pour la génération
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Insight IA"
+        verbose_name_plural = "Insights IA"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Insight pour {self.user.email} - {self.created_at}"
         

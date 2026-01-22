@@ -1,10 +1,10 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Screen, Transaction, Budget } from '../types';
 import { MOCK_PRODUCTS } from '../constants';
 import { Header, Button, Input } from '../components/Shared';
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
-import { GoogleGenAI } from '@google/genai';
+import { analytics } from '../api';
 import { Sparkles, RefreshCw, TrendingUp, AlertTriangle, PieChart as PieIcon, BarChart as BarIcon, Activity, Plus, Edit2, X, AlertCircle, ShoppingCart, Repeat, Users } from 'lucide-react';
 
 interface Props {
@@ -14,12 +14,13 @@ interface Props {
   transactions: Transaction[];
 }
 
-import { useAnalytics, useBudgets, useTransactionSummary } from '../hooks';
+import { useAnalytics, useBudgets, useTransactionSummary, useProducts } from '../hooks';
 
 const DashboardScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, isDarkMode, transactions }) => {
-  const { overview, breakdown, kpi, loading: analyticsLoading } = useAnalytics();
+  const { overview, breakdown, kpi, activity, loading: analyticsLoading } = useAnalytics();
   const { data: budgets, loading: budgetsLoading, addBudget, updateBudget, deleteBudget, refetch: refetchBudgets } = useBudgets();
   const { summary, loading: summaryLoading } = useTransactionSummary();
+  const { data: products } = useProducts();
 
   const [insights, setInsights] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,52 +46,47 @@ const DashboardScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, isDarkMode
   const COLORS = ['#14532d', '#34d399', '#f59e0b', '#ef4444', '#60a5fa', '#8b5cf6'];
 
   // Weekly data is not yet provided by backend, keep mock or implement endpoint
-  const DATA_WEEKLY = [
-    { day: 'Lun', sales: 120 },
-    { day: 'Mar', sales: 200 },
-    { day: 'Mer', sales: 150 },
-    { day: 'Jeu', sales: 300 },
-    { day: 'Ven', sales: 250 },
-    { day: 'Sam', sales: 400 },
-    { day: 'Dim', sales: 180 },
+  // Weekly data from backend
+  const DATA_WEEKLY = activity.length > 0 ? activity.map(item => ({
+    day: item.day,
+    sales: parseFloat(item.sales)
+  })) : [
+    { day: 'Lun', sales: 0 },
+    { day: 'Mar', sales: 0 },
+    { day: 'Mer', sales: 0 },
+    { day: 'Jeu', sales: 0 },
+    { day: 'Ven', sales: 0 },
+    { day: 'Sam', sales: 0 },
+    { day: 'Dim', sales: 0 },
   ];
 
   // KPIs Calculations from backend
   const avgTransactionValue = kpi?.average_basket ? parseFloat(kpi.average_basket) : 0;
+  const avgTransactionValueGrowth = kpi?.average_basket_growth || 0;
   const mrr = kpi?.estimated_mrr ? parseFloat(kpi.estimated_mrr) : 0;
+  const mrrGrowth = kpi?.estimated_mrr_growth || 0;
   const cac = kpi?.cac ? parseFloat(kpi.cac) : 0;
+  const cacGrowth = kpi?.cac_growth || 0;
+
+  const profitMargin = useMemo(() => {
+    const totalIncome = DATA_OVERVIEW.reduce((acc, item) => acc + item.revenus, 0);
+    const totalExpenses = DATA_OVERVIEW.reduce((acc, item) => acc + item.depenses, 0);
+    if (totalIncome === 0) return 0;
+    return ((totalIncome - totalExpenses) / totalIncome * 100).toFixed(1);
+  }, [DATA_OVERVIEW]);
 
   const fetchInsights = async () => {
     setLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
       // Construct context from passed transactions
       const contextData = {
-        transactions: transactions.slice(0, 10), // Limit context
-        products: MOCK_PRODUCTS.map(p => ({ name: p.name, stock: p.stockStatus, category: p.category }))
+        transactions: transactions.slice(0, 10).map(t => ({ name: t.name, amount: t.amount, type: t.type, category: t.category })),
+        products: (products.length > 0 ? products : MOCK_PRODUCTS).map(p => ({ name: p.name, stock: p.stockStatus, category: p.category }))
       };
 
-      const prompt = `
-        Tu es un analyste financier expert pour l'application Akompta.
-        Analyse les données suivantes (JSON) :
-        ${JSON.stringify(contextData)}
+      const response = await analytics.insights(contextData);
+      const items = response.data.insights || [];
 
-        Génère exactement 3 insights courts et percutants (max 1 phrase chacun) en Français :
-        1. Une observation sur les ventes ou revenus.
-        2. Une observation sur les dépenses.
-        3. Une alerte sur le stock ou une recommandation.
-
-        Format de réponse attendu : Une liste simple de 3 phrases séparées par des sauts de ligne. Pas de markdown complexe, pas de titres.
-      `;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-      });
-
-      const text = response.text || "";
-      const items = text.split('\n').filter(line => line.trim().length > 0).slice(0, 3);
       setInsights(items.length > 0 ? items : ["Analyse des ventes en cours...", "Vérification des stocks...", "Calcul des marges..."]);
 
     } catch (error) {
@@ -209,7 +205,7 @@ const DashboardScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, isDarkMode
               <option>Cette année</option>
             </select>
           </div>
-          <div className="h-52 w-full">
+          <div className="h-52 w-full min-h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={DATA_OVERVIEW} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartGridColor} />
@@ -276,7 +272,9 @@ const DashboardScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, isDarkMode
               <div className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Panier Moyen</div>
               <div>
                 <div className="text-lg font-bold text-primary dark:text-white leading-none mb-1">{avgTransactionValue.toLocaleString()}</div>
-                <div className="text-[9px] text-green-500 font-bold">+2.4%</div>
+                <div className={`text-[9px] font-bold ${avgTransactionValueGrowth >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {avgTransactionValueGrowth >= 0 ? '+' : ''}{avgTransactionValueGrowth.toFixed(1)}%
+                </div>
               </div>
             </div>
 
@@ -288,7 +286,9 @@ const DashboardScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, isDarkMode
               <div className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">MRR (Est.)</div>
               <div>
                 <div className="text-lg font-bold text-primary dark:text-white leading-none mb-1">{mrr.toLocaleString()}</div>
-                <div className="text-[9px] text-green-500 font-bold">+5.1%</div>
+                <div className={`text-[9px] font-bold ${mrrGrowth >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {mrrGrowth >= 0 ? '+' : ''}{mrrGrowth.toFixed(1)}%
+                </div>
               </div>
             </div>
 
@@ -299,8 +299,10 @@ const DashboardScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, isDarkMode
               </div>
               <div className="text-[10px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Coût Acq.</div>
               <div>
-                <div className="text-lg font-bold text-primary dark:text-white leading-none mb-1">{cac}</div>
-                <div className="text-[9px] text-red-400 font-bold">-1.2%</div>
+                <div className="text-lg font-bold text-primary dark:text-white leading-none mb-1">{cac.toLocaleString()}</div>
+                <div className={`text-[9px] font-bold ${cacGrowth <= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {cacGrowth > 0 ? '+' : ''}{cacGrowth.toFixed(1)}%
+                </div>
               </div>
             </div>
           </div>
@@ -357,7 +359,7 @@ const DashboardScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, isDarkMode
             <h3 className="font-bold text-primary dark:text-green-400 text-sm mb-2 flex items-center gap-2">
               <PieIcon size={16} /> Dépenses
             </h3>
-            <div className="h-32 relative flex-1">
+            <div className="h-32 relative flex-1 min-h-[120px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -439,7 +441,7 @@ const DashboardScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, isDarkMode
           <div className="relative z-10 flex justify-between items-end">
             <div>
               <div className="text-sm opacity-80 mb-1 font-medium">Marge Bénéficiaire</div>
-              <div className="text-4xl font-bold">16.8%</div>
+              <div className="text-4xl font-bold">{profitMargin}%</div>
             </div>
             <div className="h-12 w-24">
               <ResponsiveContainer width="100%" height="100%">

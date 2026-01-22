@@ -144,10 +144,11 @@ const ManagementScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
 
   // Filter items based on the active tab
   const filteredProducts = products.filter(product => {
+    const category = product.category?.toLowerCase() || '';
     if (activeTab === 'Produits') return true;
-    if (activeTab === 'Dépenses') return product.category === 'depense';
-    if (activeTab === 'Vente') return product.category === 'vente';
-    if (activeTab === 'Stock') return product.category === 'stock';
+    if (activeTab === 'Dépenses') return category === 'depense' || category === 'dépense';
+    if (activeTab === 'Vente') return category === 'vente';
+    if (activeTab === 'Stock') return category === 'stock';
     return true;
   });
 
@@ -202,7 +203,7 @@ const ManagementScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
           description: editFormData.description,
           price: editFormData.price,
           unit: editFormData.unit,
-          category: editFormData.category.toLowerCase(),
+          category: editFormData.category.toLowerCase().replace('é', 'e'),
           stock_status: editFormData.stockStatus || 'ok'
         });
         setIsCreating(false);
@@ -214,7 +215,7 @@ const ManagementScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
             description: editFormData.description,
             price: editFormData.price,
             unit: editFormData.unit,
-            category: editFormData.category.toLowerCase(),
+            category: editFormData.category.toLowerCase().replace('é', 'e'),
             stock_status: editFormData.stockStatus || 'ok'
           });
         }
@@ -243,7 +244,7 @@ const ManagementScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
         description: updatedProduct.description,
         price: updatedProduct.price,
         unit: updatedProduct.unit,
-        category: updatedProduct.category.toLowerCase(),
+        category: updatedProduct.category.toLowerCase().replace('é', 'e'),
         stock_status: updatedProduct.stockStatus || 'ok'
       });
     }
@@ -351,10 +352,10 @@ const ManagementScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
             <div className="text-xs opacity-80">Delivery for You !</div>
           </div>
           <div className="flex flex-col items-end">
-            <div className="text-xs mb-1">My Wallet :</div>
+            <div className="text-xs mb-1">Akompta AI</div>
             <div className="font-bold flex items-center gap-1">
-              $ 54.54
-              <button className="bg-white/20 p-1 rounded-full text-white ml-2 hover:bg-white/30 transition-colors">Top Up</button>
+              Premium
+              <button className="bg-white/20 p-1 rounded-full text-white ml-2 hover:bg-white/30 transition-colors">Détails</button>
             </div>
           </div>
           <button onClick={() => setShowPromo(false)} className="absolute -top-2 -right-2 bg-white/90 hover:bg-white rounded-full p-1 text-primary shadow-sm">
