@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Screen, Transaction } from '../types';
 import { Header, Button } from '../components/Shared';
-import { ChevronDown, ArrowUpRight, ArrowDownLeft, Wallet, Calendar, X, Share2, FileText, Printer, Search, Plus, Save, Minus } from 'lucide-react';
+import { ChevronDown, ArrowUpRight, ArrowDownLeft, Wallet, Calendar, X, Share2, FileText, Printer, Search, Plus, Save, Minus, Loader2 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { useAnalytics, useTransactionSummary } from '../hooks';
 
@@ -15,8 +15,9 @@ interface Props {
 }
 
 const WalletScreen: React.FC<Props> = ({ onNavigate, transactions, onToggleMenu, isDarkMode, onAddTransaction }) => {
-  const { balanceHistory, loading: analyticsLoading } = useAnalytics();
-  const { summary, loading: summaryLoading } = useTransactionSummary();
+  const { balanceHistory, loading: analyticsLoading, refetch: refetchAnalytics } = useAnalytics();
+  const { summary, loading: summaryLoading, refetch: refetchSummary } = useTransactionSummary();
+  const [isSaving, setIsSaving] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [timeRange, setTimeRange] = useState<'Jour' | 'Semaine' | 'Mois' | 'Année'>('Mois');
@@ -250,24 +251,37 @@ const WalletScreen: React.FC<Props> = ({ onNavigate, transactions, onToggleMenu,
     setActiveModal(type);
   };
 
-  const handleSaveTransaction = (e: React.FormEvent) => {
+  const handleSaveTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!txName || !txAmount) return;
+    if (!txName || !txAmount || isSaving) return;
 
-    onAddTransaction({
-      name: txName,
-      amount: parseInt(txAmount),
-      currency: 'FCFA',
-      type: activeModal === 'income' ? 'income' : 'expense',
-      date: "Aujourd'hui, " + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      percentage: 0,
-      category: txCategory || (activeModal === 'income' ? 'Vente' : 'Divers')
-    });
+    setIsSaving(true);
+    try {
+      await onAddTransaction({
+        name: txName,
+        amount: parseFloat(txAmount),
+        currency: 'FCFA',
+        type: activeModal === 'income' ? 'income' : 'expense',
+        date: new Date().toISOString(),
+        percentage: 0,
+        category: txCategory || (activeModal === 'income' ? 'Vente' : 'Divers')
+      });
 
-    setTxName('');
-    setTxAmount('');
-    setTxCategory('');
-    setActiveModal(null);
+      // Refetch all related data
+      await Promise.all([
+        refetchSummary(),
+        refetchAnalytics()
+      ]);
+
+      setTxName('');
+      setTxAmount('');
+      setTxCategory('');
+      setActiveModal(null);
+    } catch (error) {
+      console.error("Error saving transaction:", error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -598,9 +612,11 @@ const WalletScreen: React.FC<Props> = ({ onNavigate, transactions, onToggleMenu,
                 </button>
                 <button
                   type="submit"
-                  className={`flex-1 py-3.5 rounded-2xl text-white font-bold text-sm shadow-lg transition-colors flex items-center justify-center gap-2 ${activeModal === 'income' ? 'bg-primary shadow-primary/30 hover:bg-primary/90' : 'bg-red-500 shadow-red-500/30 hover:bg-red-600'}`}
+                  disabled={isSaving}
+                  className={`flex-1 py-3.5 rounded-2xl text-white font-bold text-sm shadow-lg transition-colors flex items-center justify-center gap-2 ${activeModal === 'income' ? 'bg-primary shadow-primary/30 hover:bg-primary/90' : 'bg-red-500 shadow-red-500/30 hover:bg-red-600'} disabled:opacity-50`}
                 >
-                  <Save size={16} /> Enregistrer
+                  {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                  {isSaving ? 'Enregistrement...' : 'Enregistrer'}
                 </button>
               </div>
             </form>

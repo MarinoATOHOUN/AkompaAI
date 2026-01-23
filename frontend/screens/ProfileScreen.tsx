@@ -15,8 +15,8 @@ interface Props {
 }
 
 const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile, onUpdateProfile }) => {
-    const { user, updateProfile, uploadAvatar } = useAuth();
-    const { summary } = useTransactionSummary();
+    const { user, updateProfile, uploadAvatar, uploadBusinessLogo } = useAuth();
+    const { summary, refetch: refetchSummary } = useTransactionSummary();
 
     const [profileName, setProfileName] = useState(user?.first_name + ' ' + user?.last_name || userProfile.name);
     const [balance, setBalance] = useState(summary?.balance || "0");
@@ -26,8 +26,10 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
     const [showEditModal, setShowEditModal] = useState(false);
     const [loading, setLoading] = useState(false);
     const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+    const [isUploadingBusinessLogo, setIsUploadingBusinessLogo] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const businessLogoInputRef = useRef<HTMLInputElement>(null);
 
     // Default avatar URL
     const getDefaultAvatar = (name: string) =>
@@ -43,7 +45,9 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
         sector: user?.sector || '',
         location: user?.location || '',
         ifu: user?.ifu || '',
-        image: user?.avatar || ''
+        image: user?.avatar || '',
+        businessLogo: user?.business_logo || '',
+        initialBalance: user?.initial_balance?.toString() || '0'
     });
 
     // Computed profile image URL
@@ -75,7 +79,9 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
                 sector: user.sector || '',
                 location: user.location || '',
                 ifu: user.ifu || '',
-                image: user.avatar || ''
+                image: user.avatar || '',
+                businessLogo: user.business_logo || '',
+                initialBalance: user.initial_balance?.toString() || '0'
             });
         }
     }, [user]);
@@ -114,6 +120,58 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
         }
     };
 
+    const handleBusinessLogoClick = () => {
+        businessLogoInputRef.current?.click();
+    };
+
+    const handleBusinessLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            // Preview locally
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const result = reader.result as string;
+                setEditForm(prev => ({ ...prev, businessLogo: result }));
+            };
+            reader.readAsDataURL(file);
+
+            // Upload to backend
+            setIsUploadingBusinessLogo(true);
+            try {
+                await uploadBusinessLogo(file);
+            } catch (error) {
+                console.error('Error uploading business logo:', error);
+                alert('Erreur lors du téléchargement du logo.');
+            } finally {
+                setIsUploadingBusinessLogo(false);
+            }
+        }
+    };
+
+    const saveBalance = async () => {
+        setIsEditingBalance(false);
+        const targetBalance = parseFloat(balance.toString().replace(/[^0-9.-]+/g, ""));
+        if (isNaN(targetBalance)) return;
+
+        // current_balance = user.initial_balance + sum_transactions
+        // sum_transactions = current_balance - user.initial_balance
+        // new_initial_balance = target_balance - sum_transactions
+        // new_initial_balance = target_balance - (current_balance - user.initial_balance)
+
+        const currentBalance = summary?.balance ? parseFloat(summary.balance) : 0;
+        const currentInitialBalance = user?.initial_balance ? parseFloat(user.initial_balance as any) : 0;
+        const newInitialBalance = targetBalance - (currentBalance - currentInitialBalance);
+
+        try {
+            await updateProfile({
+                initial_balance: newInitialBalance as any
+            });
+            await refetchSummary();
+        } catch (error) {
+            console.error('Error updating balance:', error);
+        }
+    };
+
     const saveName = async () => {
         setIsEditingName(false);
         const [firstName, ...lastNameParts] = profileName.split(' ');
@@ -146,8 +204,10 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
                 business_name: editForm.businessName,
                 sector: editForm.sector,
                 location: editForm.location,
-                ifu: editForm.ifu
+                ifu: editForm.ifu,
+                initial_balance: parseFloat(editForm.initialBalance) || 0
             });
+            await refetchSummary();
             setShowEditModal(false);
         } catch (error) {
             console.error('Error updating profile:', error);
@@ -253,10 +313,10 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
                                     onChange={(e) => setBalance(e.target.value)}
                                     className="bg-gray-700 border-2 border-gray-600 rounded-lg px-3 py-1 text-white font-bold text-3xl w-full outline-none focus:border-green-500"
                                     autoFocus
-                                    onBlur={() => setIsEditingBalance(false)}
-                                    onKeyDown={(e) => e.key === 'Enter' && setIsEditingBalance(false)}
+                                    onBlur={saveBalance}
+                                    onKeyDown={(e) => e.key === 'Enter' && saveBalance()}
                                 />
-                                <button onClick={() => setIsEditingBalance(false)} className="bg-green-500 text-white p-2 rounded-lg">
+                                <button onClick={saveBalance} className="bg-green-500 text-white p-2 rounded-lg">
                                     <Save size={20} />
                                 </button>
                             </div>
@@ -314,6 +374,34 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
                         {/* Business Specific Info */}
                         {user?.account_type === 'business' && (
                             <>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-500 overflow-hidden border border-blue-100 dark:border-blue-800 relative group/logo cursor-pointer" onClick={handleBusinessLogoClick}>
+                                        {user?.business_logo ? (
+                                            <img src={getFullImageUrl(user.business_logo)!} className="w-full h-full object-cover" alt="Business Logo" />
+                                        ) : (
+                                            <Building2 size={24} />
+                                        )}
+                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/logo:opacity-100 transition-opacity">
+                                            <Camera size={16} className="text-white" />
+                                        </div>
+                                        {isUploadingBusinessLogo && (
+                                            <div className="absolute inset-0 bg-white/60 dark:bg-black/60 flex items-center justify-center">
+                                                <Loader2 size={16} className="animate-spin text-primary" />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="text-[10px] text-gray-400 uppercase font-bold tracking-wide">Logo Entreprise</div>
+                                        <div className="text-gray-800 dark:text-white font-medium text-sm">{user?.business_name || 'Non renseigné'}</div>
+                                    </div>
+                                    <input
+                                        type="file"
+                                        ref={businessLogoInputRef}
+                                        onChange={handleBusinessLogoFileChange}
+                                        className="hidden"
+                                        accept="image/*"
+                                    />
+                                </div>
                                 <div className="w-full h-px bg-gray-100 dark:bg-gray-700 my-2"></div>
                                 <div className="flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-500">
@@ -415,6 +503,15 @@ const ProfileScreen: React.FC<Props> = ({ onNavigate, onToggleMenu, userProfile,
                                     value={editForm.phone || ''}
                                     onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
                                     className="w-full bg-gray-50 dark:bg-gray-700 px-4 py-3 rounded-xl outline-none focus:ring-2 focus:ring-primary/20 text-gray-800 dark:text-white font-medium"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase ml-2 mb-1 block">Solde Initial (FCFA)</label>
+                                <input
+                                    value={editForm.initialBalance || ''}
+                                    onChange={(e) => setEditForm({ ...editForm, initialBalance: e.target.value })}
+                                    className="w-full bg-gray-50 dark:bg-gray-700 px-4 py-3 rounded-xl outline-none focus:ring-2 focus:ring-primary/20 text-gray-800 dark:text-white font-medium"
+                                    type="number"
                                 />
                             </div>
 

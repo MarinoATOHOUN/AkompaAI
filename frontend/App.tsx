@@ -101,9 +101,10 @@ const App: React.FC = () => {
 
   const handleAddTransaction = async (newTx: Omit<Transaction, 'id'>) => {
     try {
-      await addTransactionToBackend(newTx);
+      return await addTransactionToBackend(newTx);
     } catch (error) {
       console.error("Failed to add transaction:", error);
+      throw error;
     }
   };
 

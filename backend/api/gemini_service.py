@@ -28,13 +28,15 @@ class GeminiService:
         # Use free tier model with generous quotas
         self.model = "gemini-flash-latest"  # Free tier: 15 RPM, 1M tokens/day
 
-    def process_voice_command(self, audio_bytes, mime_type="audio/mp3"):
+    def process_voice_command(self, audio_bytes, mime_type="audio/mp3", context_products=None):
         """
         Process audio bytes to extract transaction details.
         Returns a dictionary with transcription and structured data.
         """
-        
-        prompt = """
+        if context_products is None:
+            context_products = []
+
+        prompt = f"""
         You are an AI assistant for a financial app called Akompta.
         Your task is to listen to the user's voice command and extract transaction details.
         
@@ -42,30 +44,37 @@ class GeminiService:
         - "J'ai vendu la tomate pour 500FCFA le Kilo" (Income)
         - "J'ai payé un ordinateur à 300000FCFA" (Expense)
         
+        Here is the list of products currently in the user's inventory:
+        {json.dumps(context_products)}
+        
+        If the user mentions a product from this list but doesn't specify the price, use the price from the list to calculate the total amount (amount = quantity * price).
+        
         Please perform the following:
         1. Transcribe the audio exactly as spoken (in French).
         2. Analyze the intent and extract structured data.
         
         Return ONLY a JSON object with the following structure:
-        {
+        {{
             "transcription": "The exact transcription",
             "intent": "create_transaction",
-            "data": {
+            "data": {{
                 "type": "income" or "expense",
                 "amount": number (e.g. 500),
                 "currency": "FCFA" or other,
                 "category": "Category name (e.g. Vente, Alimentation, Transport, Technologie)",
-                "name": "Description of the item or service",
+                "name": "Description of the item or service (e.g. 'Vente de 3 Mangues')",
                 "date": "YYYY-MM-DD" or null if not specified (assume today if null)
-            }
-        }
+            }}
+        }}
+        
+        Important: If a product price is found in the inventory list, ALWAYS calculate: amount = quantity * unit_price.
         
         If the audio is not clear or not related to a transaction, return:
-        {
+        {{
             "transcription": "...",
             "intent": "unknown",
             "error": "Reason"
-        }
+        }}
         """
 
         try:
@@ -96,11 +105,14 @@ class GeminiService:
                 "error": str(e)
             }
 
-    def process_text_command(self, text):
+    def process_text_command(self, text, context_products=None):
         """
         Process text input to extract transaction details.
         """
-        prompt = """
+        if context_products is None:
+            context_products = []
+
+        prompt = f"""
         You are an AI assistant for a financial app called Akompta.
         Your task is to analyze the user's text command and extract transaction details.
         
@@ -109,45 +121,53 @@ class GeminiService:
         - "J'ai payé un ordinateur à 300000FCFA" (Expense)
         - "Ajoute un produit Tomate à 200FCFA le bol, j'en ai 30 en stock" (Create Product)
         
+        Here is the list of products currently in the user's inventory:
+        {json.dumps(context_products)}
+        
+        If the user mentions a product from this list but doesn't specify the price, use the price from the list to calculate the total amount (amount = quantity * price).
+        Example: If "Mangue" is in the list at 100 FCFA and the user says "vendu 3 mangues", the amount should be 300.
+        
         Please perform the following:
         1. Analyze the intent and extract structured data.
         
         Return ONLY a JSON object with the following structure:
         
         For transactions:
-        {
+        {{
             "transcription": "The input text",
             "intent": "create_transaction",
-            "data": {
+            "data": {{
                 "type": "income" or "expense",
                 "amount": number,
                 "currency": "FCFA",
                 "category": "Category name",
-                "name": "Description",
+                "name": "Description (e.g. 'Vente de 3 Mangues')",
                 "date": "YYYY-MM-DD"
-            }
-        }
+            }}
+        }}
+        
+        Important: If a product price is found in the inventory list, ALWAYS calculate: amount = quantity * unit_price.
         
         For products/inventory:
-        {
+        {{
             "transcription": "The input text",
             "intent": "create_product",
-            "data": {
+            "data": {{
                 "name": "Product name",
                 "price": number,
                 "unit": "Unit (e.g. bol, kg, unit)",
                 "description": "Short description",
                 "category": "vente" or "depense" or "stock",
                 "stock_status": "ok" or "low" or "rupture"
-            }
-        }
+            }}
+        }}
         
         If the text is not clear, return:
-        {
+        {{
             "transcription": "...",
             "intent": "unknown",
             "error": "Reason"
-        }
+        }}
         """
 
         try:

@@ -41,6 +41,8 @@ export interface UserProfile {
   phone_number?: string;
   account_type?: 'personal' | 'business';
   business_name?: string;
+  initial_balance?: number;
+  business_logo?: string;
 }
 
 

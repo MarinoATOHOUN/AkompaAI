@@ -83,6 +83,15 @@ export const auth = {
             },
         });
     },
+    uploadBusinessLogo: (file: File) => {
+        const formData = new FormData();
+        formData.append('business_logo', file);
+        return api.patch<UserProfile>('/auth/me/', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+    },
 };
 
 
@@ -111,7 +120,14 @@ export const budgets = {
 
 export const ads = {
     list: (params?: any) => api.get('/ads/', { params }),
-    create: (data: any) => api.post('/ads/', data),
+    create: (data: any) => {
+        const isFormData = data instanceof FormData;
+        return api.post('/ads/', data, {
+            headers: {
+                'Content-Type': isFormData ? 'multipart/form-data' : 'application/json',
+            },
+        });
+    },
 };
 
 export const notifications = {

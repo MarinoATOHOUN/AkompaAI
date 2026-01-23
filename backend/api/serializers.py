@@ -14,7 +14,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'email', 'first_name', 'last_name', 'phone_number',
-            'avatar', 'account_type', 'is_premium',
+            'avatar', 'account_type', 'is_premium', 'initial_balance',
             'business_name', 'sector', 'location', 'ifu', 'business_logo',
             'currency', 'language', 'dark_mode',
             'created_at', 'updated_at'

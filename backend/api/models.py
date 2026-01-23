@@ -53,6 +53,7 @@ class User(AbstractUser):
         default='personal'
     )
     is_premium = models.BooleanField(default=False)
+    initial_balance = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     
     # Champs Business
     business_name = models.CharField(max_length=255, blank=True)

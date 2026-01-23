@@ -285,7 +285,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
             user=user, type='expense'
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
         
-        balance = total_income - total_expenses
+        balance = user.initial_balance + total_income - total_expenses
         
         # Variations en %
         def calc_variation(current, previous):
@@ -449,7 +449,7 @@ class AnalyticsView(APIView):
         transactions = Transaction.objects.filter(user=user).order_by('date')
         
         history = []
-        running_balance = Decimal('0.00')
+        running_balance = user.initial_balance
         
         # Grouper par date pour éviter d'avoir trop de points si plusieurs transactions le même jour
         daily_balances = {}
@@ -598,12 +598,20 @@ class VoiceCommandView(APIView):
         try:
             service = GeminiService()
             
+            # Fetch user products for context
+            user_products = Product.objects.filter(user=request.user)
+            products_list = [
+                {"name": p.name, "price": float(p.price), "unit": p.unit} 
+                for p in user_products
+            ]
+            print(f"VoiceCommandView - Context Products: {products_list}")
+            
             if audio_file:
                 audio_bytes = audio_file.read()
                 mime_type = audio_file.content_type or 'audio/mp3'
-                result = service.process_voice_command(audio_bytes, mime_type)
+                result = service.process_voice_command(audio_bytes, mime_type, context_products=products_list)
             else:
-                result = service.process_text_command(text_command)
+                result = service.process_text_command(text_command, context_products=products_list)
             
             print(f"VoiceCommandView - Result Intent: {result.get('intent')}")
             

@@ -2,8 +2,9 @@
 import React, { useState } from 'react';
 import { Screen } from '../types';
 import { Header } from '../components/Shared';
-import { ExternalLink, MessageCircle, MapPin, Globe, Store, User, PlusCircle, X, ChevronRight, ChevronLeft, Check, Image as ImageIcon, Tag } from 'lucide-react';
+import { ExternalLink, MessageCircle, MapPin, Globe, Store, User, PlusCircle, X, ChevronRight, ChevronLeft, Check, Image as ImageIcon, Tag, Camera, Loader2, AlertCircle } from 'lucide-react';
 import { useAds } from '../hooks';
+import { BASE_URL } from '../api';
 
 interface Props {
     onNavigate: (screen: Screen) => void;
@@ -23,7 +24,8 @@ interface AdData {
 }
 
 const AdsScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
-    const { data: adsData, loading, addAd } = useAds();
+    const { data: adsData, loading: adsLoading, addAd } = useAds();
+    const [loading, setLoading] = useState(false);
 
     // Wizard State
     const [isPublishing, setIsPublishing] = useState(false);
@@ -34,8 +36,20 @@ const AdsScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
         description: '',
         whatsapp: '',
         website: '',
-        location: ''
+        location: '',
+        image: null as File | null,
+        imagePreview: ''
     });
+
+    const getFullImageUrl = (url: string | undefined) => {
+        if (!url) return null;
+        if (url.startsWith('http') || url.startsWith('data:')) return url;
+        let path = url;
+        if (!path.includes('/media/') && !path.includes('media/')) {
+            path = `/media/${path.startsWith('/') ? path.substring(1) : path}`;
+        }
+        return `${BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+    };
 
     // Transform API data to local format
     const localAds: AdData[] = adsData.map((ad: any) => ({
@@ -43,7 +57,7 @@ const AdsScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
         productName: ad.product_name,
         owner: ad.owner_name,
         description: ad.description,
-        image: ad.image || `https://picsum.photos/seed/${ad.id}/600/400`,
+        image: getFullImageUrl(ad.image) || `https://picsum.photos/seed/${ad.id}/600/400`,
         whatsapp: ad.whatsapp,
         website: ad.website || '',
         location: ad.location,
@@ -68,7 +82,9 @@ const AdsScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
             description: '',
             whatsapp: '',
             website: '',
-            location: ''
+            location: '',
+            image: null,
+            imagePreview: ''
         });
     };
 
@@ -77,26 +93,44 @@ const AdsScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
     };
 
     const handleNext = () => {
-        if (currentStep < 4) setCurrentStep(prev => prev + 1);
+        if (currentStep < 5) setCurrentStep(prev => prev + 1);
     };
 
     const handleBack = () => {
         if (currentStep > 1) setCurrentStep(prev => prev - 1);
     };
 
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setFormData(prev => ({
+                ...prev,
+                image: file,
+                imagePreview: URL.createObjectURL(file)
+            }));
+        }
+    };
+
     const handleSubmit = async () => {
+        setLoading(true);
         try {
-            await addAd({
-                product_name: formData.productName,
-                owner_name: formData.owner,
-                description: formData.description,
-                whatsapp: formData.whatsapp,
-                website: formData.website,
-                location: formData.location
-            });
+            const data = new FormData();
+            data.append('product_name', formData.productName);
+            data.append('owner_name', formData.owner);
+            data.append('description', formData.description);
+            data.append('whatsapp', formData.whatsapp);
+            data.append('website', formData.website);
+            data.append('location', formData.location);
+            if (formData.image) {
+                data.append('image', formData.image);
+            }
+
+            await addAd(data);
             closeWizard();
         } catch (error) {
             console.error('Error creating ad:', error);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -106,7 +140,8 @@ const AdsScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
             case 1: return formData.productName.length > 2;
             case 2: return formData.owner.length > 2;
             case 3: return formData.description.length > 10;
-            case 4: return formData.whatsapp.length > 5 && formData.location.length > 2;
+            case 4: return !!formData.image;
+            case 5: return formData.whatsapp.length > 5 && formData.location.length > 2;
             default: return false;
         }
     };
@@ -146,63 +181,78 @@ const AdsScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
                 </div>
 
                 <div className="space-y-6">
-                    {localAds.map((ad) => (
-                        <div key={ad.id} className="bg-white dark:bg-gray-800 rounded-[30px] overflow-hidden shadow-sm hover:shadow-md transition-all border border-transparent hover:border-primary/10 dark:hover:border-green-400/20 group">
-                            {/* Image Header */}
-                            <div className="h-48 relative overflow-hidden">
-                                <img
-                                    src={ad.image}
-                                    alt={ad.productName}
-                                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                                />
-                                <div className="absolute top-4 left-4 bg-white/95 dark:bg-gray-900/90 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center gap-2 text-xs font-bold text-gray-800 dark:text-white shadow-sm">
-                                    <User size={12} className="text-primary dark:text-green-400" />
-                                    {ad.owner}
-                                    {ad.verified && (
-                                        <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center" title="Vérifié">
-                                            <svg viewBox="0 0 24 24" fill="none" className="w-2.5 h-2.5 text-white" stroke="currentColor" strokeWidth="4"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="p-5">
-                                <div className="flex justify-between items-start mb-2">
-                                    <h4 className="font-bold text-xl text-primary dark:text-white leading-tight">{ad.productName}</h4>
-                                </div>
-
-                                <div className="flex items-center gap-1.5 text-gray-400 text-xs mb-3 font-medium">
-                                    <MapPin size={14} className="text-gray-300 dark:text-gray-500" /> {ad.location}
-                                </div>
-
-                                <p className="text-gray-600 dark:text-gray-300 text-sm mb-6 leading-relaxed">
-                                    {ad.description}
-                                </p>
-
-                                <div className="grid grid-cols-2 gap-3">
-                                    <button
-                                        onClick={() => handleWhatsapp(ad.whatsapp)}
-                                        className="flex items-center justify-center gap-2 bg-[#25D366] text-white py-3 rounded-2xl font-bold text-sm shadow-[#25D366]/20 shadow-lg hover:bg-[#20bd5a] transition-colors active:scale-95"
-                                    >
-                                        <MessageCircle size={18} /> WhatsApp
-                                    </button>
-
-                                    {ad.website ? (
-                                        <button
-                                            onClick={() => handleWebsite(ad.website!)}
-                                            className="flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white py-3 rounded-2xl font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors active:scale-95"
-                                        >
-                                            <Globe size={18} /> Site Web
-                                        </button>
-                                    ) : (
-                                        <button className="flex items-center justify-center gap-2 bg-gray-50 dark:bg-gray-800 text-gray-300 dark:text-gray-600 py-3 rounded-2xl font-bold text-sm cursor-not-allowed border border-gray-100 dark:border-gray-700">
-                                            <Globe size={18} /> Site Web
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
+                    {adsLoading ? (
+                        <div className="flex flex-col items-center justify-center py-12">
+                            <Loader2 size={40} className="text-primary animate-spin mb-4" />
+                            <p className="text-gray-500 text-sm">Chargement des annonces...</p>
                         </div>
-                    ))}
+                    ) : localAds.length > 0 ? (
+                        localAds.map((ad) => (
+                            <div key={ad.id} className="bg-white dark:bg-gray-800 rounded-[30px] overflow-hidden shadow-sm hover:shadow-md transition-all border border-transparent hover:border-primary/10 dark:hover:border-green-400/20 group">
+                                {/* Image Header */}
+                                <div className="h-48 relative overflow-hidden">
+                                    <img
+                                        src={ad.image}
+                                        alt={ad.productName}
+                                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                                    />
+                                    <div className="absolute top-4 left-4 bg-white/95 dark:bg-gray-900/90 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center gap-2 text-xs font-bold text-gray-800 dark:text-white shadow-sm">
+                                        <User size={12} className="text-primary dark:text-green-400" />
+                                        {ad.owner}
+                                        {ad.verified && (
+                                            <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center" title="Vérifié">
+                                                <svg viewBox="0 0 24 24" fill="none" className="w-2.5 h-2.5 text-white" stroke="currentColor" strokeWidth="4"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="p-5">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <h4 className="font-bold text-xl text-primary dark:text-white leading-tight">{ad.productName}</h4>
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 text-gray-400 text-xs mb-3 font-medium">
+                                        <MapPin size={14} className="text-gray-300 dark:text-gray-500" /> {ad.location}
+                                    </div>
+
+                                    <p className="text-gray-600 dark:text-gray-300 text-sm mb-6 leading-relaxed">
+                                        {ad.description}
+                                    </p>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button
+                                            onClick={() => handleWhatsapp(ad.whatsapp)}
+                                            className="flex items-center justify-center gap-2 bg-[#25D366] text-white py-3 rounded-2xl font-bold text-sm shadow-[#25D366]/20 shadow-lg hover:bg-[#20bd5a] transition-colors active:scale-95"
+                                        >
+                                            <MessageCircle size={18} /> WhatsApp
+                                        </button>
+
+                                        {ad.website ? (
+                                            <button
+                                                onClick={() => handleWebsite(ad.website!)}
+                                                className="flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white py-3 rounded-2xl font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors active:scale-95"
+                                            >
+                                                <Globe size={18} /> Site Web
+                                            </button>
+                                        ) : (
+                                            <button className="flex items-center justify-center gap-2 bg-gray-50 dark:bg-gray-800 text-gray-300 dark:text-gray-600 py-3 rounded-2xl font-bold text-sm cursor-not-allowed border border-gray-100 dark:border-gray-700">
+                                                <Globe size={18} /> Site Web
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-[30px] shadow-sm">
+                            <ImageIcon size={48} className="text-gray-300 mx-auto mb-4" />
+                            <p className="text-gray-500 font-medium">Aucune annonce disponible pour le moment.</p>
+                            <button onClick={openWizard} className="mt-4 text-primary dark:text-green-400 font-bold text-sm">
+                                Soyez le premier à publier !
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="text-center text-xs text-gray-400 mt-4 pb-4">
@@ -220,7 +270,7 @@ const AdsScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
                         <div className="flex items-center justify-between mb-6">
                             <div>
                                 <h3 className="text-xl font-bold text-gray-800 dark:text-white">Créer une annonce</h3>
-                                <p className="text-xs text-gray-400">Étape {currentStep} sur 4</p>
+                                <p className="text-xs text-gray-400">Étape {currentStep} sur 5</p>
                             </div>
                             <button
                                 onClick={closeWizard}
@@ -234,7 +284,7 @@ const AdsScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
                         <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full mb-8 overflow-hidden">
                             <div
                                 className="h-full bg-primary dark:bg-green-500 transition-all duration-300 ease-out rounded-full"
-                                style={{ width: `${(currentStep / 4) * 100}%` }}
+                                style={{ width: `${(currentStep / 5) * 100}%` }}
                             ></div>
                         </div>
 
@@ -305,13 +355,54 @@ const AdsScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
                                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                             placeholder="Décrivez votre produit, prix, conditionnement..."
                                             className="w-full bg-gray-50 dark:bg-gray-700 px-6 py-4 rounded-2xl outline-none focus:ring-2 focus:ring-primary/20 text-gray-800 dark:text-white font-medium text-base placeholder-gray-400 min-h-[150px] resize-none"
-                                            autoFocus
                                         />
                                     </div>
                                 </div>
                             )}
 
                             {currentStep === 4 && (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                                    <div className="flex justify-center mb-6">
+                                        <div className="w-20 h-20 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center text-green-500 mb-2">
+                                            <Camera size={40} />
+                                        </div>
+                                    </div>
+                                    <h4 className="text-center text-lg font-bold text-gray-700 dark:text-gray-200 mb-6">Ajoutez une photo</h4>
+
+                                    <div className="flex flex-col items-center">
+                                        <div
+                                            onClick={() => document.getElementById('ad-image-upload')?.click()}
+                                            className="w-full aspect-video rounded-[30px] border-2 border-dashed border-gray-300 dark:border-gray-600 flex flex-col items-center justify-center cursor-pointer hover:border-primary dark:hover:border-green-400 transition-colors overflow-hidden bg-gray-50 dark:bg-gray-700/50"
+                                        >
+                                            {formData.imagePreview ? (
+                                                <img src={formData.imagePreview} className="w-full h-full object-cover" alt="Preview" />
+                                            ) : (
+                                                <>
+                                                    <ImageIcon size={48} className="text-gray-400 mb-2" />
+                                                    <span className="text-sm text-gray-500 font-medium">Cliquez pour choisir une image</span>
+                                                </>
+                                            )}
+                                        </div>
+                                        <input
+                                            id="ad-image-upload"
+                                            type="file"
+                                            className="hidden"
+                                            accept="image/*"
+                                            onChange={handleImageChange}
+                                        />
+                                        {formData.imagePreview && (
+                                            <button
+                                                onClick={() => setFormData(prev => ({ ...prev, image: null, imagePreview: '' }))}
+                                                className="mt-4 text-xs font-bold text-red-500 uppercase tracking-wider"
+                                            >
+                                                Supprimer la photo
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {currentStep === 5 && (
                                 <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
                                     <div className="flex justify-center mb-6">
                                         <div className="w-20 h-20 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center text-green-500 mb-2">
@@ -360,6 +451,14 @@ const AdsScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
                                             />
                                         </div>
                                     </div>
+
+                                    <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-2xl flex gap-3 text-[11px] text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800/30 mt-4">
+                                        <div className="shrink-0 mt-0.5"><AlertCircle size={14} /></div>
+                                        <p className="leading-tight">
+                                            <strong>Note :</strong> Votre annonce sera vérifiée par l'équipe <strong>CosmoLAB Hub</strong>.
+                                            Elle sera visible après validation (généralement entre quelques heures et 24h).
+                                        </p>
+                                    </div>
                                 </div>
                             )}
 
@@ -377,15 +476,18 @@ const AdsScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
                             )}
 
                             <button
-                                onClick={currentStep === 4 ? handleSubmit : handleNext}
-                                disabled={!isStepValid()}
+                                onClick={currentStep === 5 ? handleSubmit : handleNext}
+                                disabled={!isStepValid() || (currentStep === 5 && loading)}
                                 className={`flex-1 py-4 rounded-2xl font-bold text-white shadow-lg flex items-center justify-center gap-2 transition-all ${isStepValid()
-                                        ? 'bg-primary hover:bg-primary/90 shadow-primary/30'
-                                        : 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed shadow-none'
+                                    ? 'bg-primary hover:bg-primary/90 shadow-primary/30'
+                                    : 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed shadow-none'
                                     }`}
                             >
-                                {currentStep === 4 ? (
-                                    <>Publier l'annonce <Check size={20} /></>
+                                {currentStep === 5 ? (
+                                    <>
+                                        {loading ? <Loader2 className="animate-spin" size={20} /> : <Check size={20} />}
+                                        {loading ? 'Publication...' : "Publier l'annonce"}
+                                    </>
                                 ) : (
                                     <>Suivant <ChevronRight size={20} /></>
                                 )}

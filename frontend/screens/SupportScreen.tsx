@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Screen } from '../types';
 import { Header, Button, Input } from '../components/Shared';
-import { Mail, Phone, MapPin, Send, MessageSquare, Clock } from 'lucide-react';
+import { Mail, Phone, MapPin, Send, MessageSquare, Clock, AlertCircle } from 'lucide-react';
 import { useSupportTickets } from '../hooks';
 
 interface Props {
@@ -125,6 +125,13 @@ const SupportScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
                                     onChange={(e) => setMessage(e.target.value)}
                                     required
                                 ></textarea>
+                                <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-2xl flex gap-3 text-[11px] text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800/30 mb-2">
+                                    <div className="shrink-0 mt-0.5"><AlertCircle size={14} /></div>
+                                    <p className="leading-tight">
+                                        <strong>Note :</strong> Votre demande sera traitée par l'équipe <strong>CosmoLAB Hub</strong>.
+                                        Une réponse vous sera apportée généralement sous 24h.
+                                    </p>
+                                </div>
                                 <Button
                                     type="submit"
                                     disabled={submitting}

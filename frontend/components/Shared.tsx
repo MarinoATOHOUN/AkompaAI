@@ -102,9 +102,9 @@ export const Header: React.FC<HeaderProps> = ({ title, onBack, onMenu, showProfi
           <ArrowLeft size={28} />
         </button>
       ) : showProfile ? (
-        <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-primary dark:border-green-400">
+        <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-primary dark:border-green-400 bg-white flex items-center justify-center">
           <img
-            src={profileImage}
+            src={user?.account_type === 'business' && user?.business_logo ? getFullImageUrl(user.business_logo)! : profileImage}
             alt="Profile"
             className="w-full h-full object-cover"
             onError={(e) => {
@@ -232,9 +232,9 @@ export const MenuOverlay: React.FC<MenuOverlayProps> = ({ isOpen, onClose, onNav
         ) : (
           <>
             <div className="flex items-center gap-3 mb-8 px-2 border-b pb-6 border-gray-100 dark:border-gray-700">
-              <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-primary/30 overflow-hidden border-2 border-primary dark:border-green-400">
+              <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-primary/30 overflow-hidden border-2 border-primary dark:border-green-400 bg-white">
                 <img
-                  src={profileImage}
+                  src={user?.account_type === 'business' && user?.business_logo ? getFullImageUrl(user.business_logo)! : profileImage}
                   alt="Profile"
                   className="w-full h-full object-cover"
                   onError={(e) => {
