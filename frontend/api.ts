@@ -3,7 +3,7 @@ import { UserProfile, Transaction, Product, Budget, Notification } from './types
 
 export const BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:8000'
-    : 'https://clab2025.pythonanywhere.com';
+    : 'https://cosmolabhub-akomptabackend.hf.space';
 
 const API_URL = `${BASE_URL}/api`;
 
