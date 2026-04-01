@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
-import { Screen, Product } from '../types';
+import { Screen, Product, Transaction } from '../types';
 import { Header } from '../components/Shared';
 import { Search, Heart, Mic, ShoppingBag, Plus, X, Edit, Trash2, AlertTriangle, Download, Save } from 'lucide-react';
-import { useProducts } from '../hooks';
+import { useProducts, useTransactions } from '../hooks';
 
 interface Props {
   onNavigate: (screen: Screen) => void;
@@ -129,8 +128,32 @@ const ProductCard: React.FC<{
   );
 };
 
+const TransactionItem: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
+  const isIncome = transaction.type === 'income';
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-[30px] p-4 flex gap-4 mb-4 shadow-sm border-l-4 border-l-primary dark:border-l-green-500">
+      <div className={`w-14 h-14 rounded-full flex items-center justify-center shrink-0 ${isIncome ? 'bg-green-100 dark:bg-green-900/30 text-green-600' : 'bg-orange-100 dark:bg-orange-900/30 text-orange-600'}`}>
+        <ShoppingBag size={24} />
+      </div>
+      <div className="flex-1 flex flex-col justify-center">
+        <div className="flex justify-between items-center">
+          <h3 className="text-primary dark:text-white text-md font-bold">{transaction.name}</h3>
+          <span className={`text-sm font-bold ${isIncome ? 'text-green-600' : 'text-orange-500'}`}>
+            {isIncome ? '+' : '-'}{transaction.amount} F
+          </span>
+        </div>
+        <div className="flex justify-between items-center mt-1">
+          <span className="text-[10px] text-gray-400 uppercase tracking-tighter">{transaction.category}</span>
+          <span className="text-[10px] text-gray-400">{new Date(transaction.date).toLocaleDateString()}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ManagementScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
-  const { data: products, loading, addProduct, updateProduct, deleteProduct } = useProducts();
+  const { data: products, loading: productsLoading, addProduct, updateProduct, deleteProduct } = useProducts();
+  const { data: transactions, loading: txLoading } = useTransactions();
   const [activeTab, setActiveTab] = useState<'Vente' | 'Dépenses' | 'Produits' | 'Stock'>('Vente');
   const [showPromo, setShowPromo] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -142,15 +165,32 @@ const ManagementScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
   const [isCreating, setIsCreating] = useState(false);
   const [editFormData, setEditFormData] = useState<Product | null>(null);
 
-  // Filter items based on the active tab
-  const filteredProducts = products.filter(product => {
-    const category = product.category?.toLowerCase() || '';
-    if (activeTab === 'Produits') return true;
-    if (activeTab === 'Dépenses') return category === 'depense' || category === 'dépense';
-    if (activeTab === 'Vente') return category === 'vente';
-    if (activeTab === 'Stock') return category === 'stock';
-    return true;
-  });
+  // Mixed items (Products + Transactions) based on the active tab
+  const filteredItems = (() => {
+    if (activeTab === 'Produits') return products;
+    if (activeTab === 'Stock') return products.filter(p => p.category?.toLowerCase() === 'stock' || p.stockStatus === 'low' || p.stockStatus === 'rupture');
+
+    const catProducts = products.filter(product => {
+      const category = product.category?.toLowerCase() || '';
+      if (activeTab === 'Dépenses') return category === 'depense' || category === 'dépense';
+      if (activeTab === 'Vente') return category === 'vente';
+      return false;
+    });
+
+    const catTransactions = transactions.filter(tx => {
+      if (activeTab === 'Vente') return tx.type === 'income';
+      if (activeTab === 'Dépenses') return tx.type === 'expense';
+      return false;
+    });
+
+    // We return a mixed list. We'll identify them by their structure in rendering.
+    return [...catProducts, ...catTransactions].sort((a: any, b: any) => {
+       // Sort by date/created_at if available
+       const dateA = new Date(a.date || (a as any).created_at || 0).getTime();
+       const dateB = new Date(b.date || (b as any).created_at || 0).getTime();
+       return dateB - dateA;
+    });
+  })();
 
   const handleDeleteProduct = async () => {
     if (selectedProduct && selectedProduct.id) {
@@ -320,21 +360,30 @@ const ManagementScreen: React.FC<Props> = ({ onNavigate, onToggleMenu }) => {
       </div>
 
       <div className="px-6 overflow-y-auto flex-1 no-scrollbar">
-        {filteredProducts.length > 0 ? (
-          filteredProducts.map(p => (
-            <ProductCard
-              key={p.id}
-              product={p}
-              onClick={() => setSelectedProduct(p)}
-              isEditing={editingId === p.id}
-              onEditStart={(e) => {
-                e.stopPropagation();
-                setEditingId(p.id);
-              }}
-              onSave={handleInlineSave}
-              onCancel={() => setEditingId(null)}
-            />
-          ))
+        {(productsLoading || txLoading) ? (
+          <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-primary border-t-transparent animate-spin rounded-full"></div></div>
+        ) : filteredItems.length > 0 ? (
+          filteredItems.map((item: any) => {
+            const isProduct = 'price' in item && 'category' in item && !('amount' in item);
+            if (isProduct) {
+              return (
+                <ProductCard
+                  key={`prod-${item.id}`}
+                  product={item}
+                  onClick={() => setSelectedProduct(item)}
+                  isEditing={editingId === item.id}
+                  onEditStart={(e) => {
+                    e.stopPropagation();
+                    setEditingId(item.id);
+                  }}
+                  onSave={handleInlineSave}
+                  onCancel={() => setEditingId(null)}
+                />
+              );
+            } else {
+              return <TransactionItem key={`tx-${item.id}`} transaction={item} />;
+            }
+          })
         ) : (
           <div className="flex flex-col items-center justify-center h-40 text-primary/50 dark:text-gray-500">
             <p>Aucun élément trouvé.</p>

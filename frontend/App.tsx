@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Screen, Transaction, UserProfile } from './types';
 import BottomNav from './components/BottomNav';
 import { MenuOverlay } from './components/Shared';
-import { useTransactions } from './hooks';
+import { useTransactions, useProducts, useAnalytics, useTransactionSummary } from './hooks';
 
 // Screens
 import { LoginScreen, RegisterScreen, RecoveryEmailScreen, RecoveryCodeScreen } from './screens/AuthScreens';
@@ -31,7 +31,10 @@ const App: React.FC = () => {
     const savedScreen = localStorage.getItem('akompta_current_screen');
     return (savedScreen as Screen) || Screen.LANDING;
   });
-  const { data: transactions, addTransaction: addTransactionToBackend } = useTransactions();
+  const { data: transactions, addTransaction: addTransactionToBackend, refetch: refetchTransactions } = useTransactions();
+  const { data: products, addProduct: addProductToBackend, refetch: refetchProducts } = useProducts();
+  const { refetch: refetchAnalytics } = useAnalytics();
+  const { refetch: refetchSummary } = useTransactionSummary();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile>({
     name: 'Akompta Admin',
@@ -101,11 +104,32 @@ const App: React.FC = () => {
 
   const handleAddTransaction = async (newTx: Omit<Transaction, 'id'>) => {
     try {
-      return await addTransactionToBackend(newTx);
+      const res = await addTransactionToBackend(newTx);
+      // Refresh everything to ensure consistency across pages
+      refreshAllData();
+      return res;
     } catch (error) {
       console.error("Failed to add transaction:", error);
       throw error;
     }
+  };
+
+  const handleAddProduct = async (newProd: Omit<Product, 'id'>) => {
+    try {
+      const res = await addProductToBackend(newProd);
+      refreshAllData();
+      return res;
+    } catch (error) {
+      console.error("Failed to add product:", error);
+      throw error;
+    }
+  };
+
+  const refreshAllData = () => {
+    refetchTransactions();
+    refetchProducts();
+    refetchAnalytics();
+    refetchSummary();
   };
 
   const renderScreen = () => {
@@ -125,7 +149,15 @@ const App: React.FC = () => {
       case Screen.MANAGEMENT:
         return <ManagementScreen onNavigate={navigate} onToggleMenu={toggleMenu} />;
       case Screen.VOICE:
-        return <VoiceScreen onNavigate={navigate} onAddTransaction={handleAddTransaction} onToggleMenu={toggleMenu} />;
+        return (
+          <VoiceScreen 
+            onNavigate={navigate} 
+            onAddTransaction={handleAddTransaction} 
+            onAddProduct={handleAddProduct}
+            onRefreshAll={refreshAllData}
+            onToggleMenu={toggleMenu} 
+          />
+        );
       case Screen.WALLET:
         return <WalletScreen onNavigate={navigate} transactions={transactions} onToggleMenu={toggleMenu} isDarkMode={isDarkMode} onAddTransaction={handleAddTransaction} />;
       case Screen.TRANSACTIONS:

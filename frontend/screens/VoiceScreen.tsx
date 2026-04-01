@@ -7,10 +7,18 @@ import { voice } from '../api';
 interface Props {
   onNavigate: (screen: Screen) => void;
   onAddTransaction: (tx: Omit<Transaction, 'id'>) => void;
+  onAddProduct: (prod: any) => void;
+  onRefreshAll: () => void;
   onToggleMenu: () => void;
 }
 
-const VoiceScreen: React.FC<Props> = ({ onNavigate, onAddTransaction, onToggleMenu }) => {
+const VoiceScreen: React.FC<Props> = ({ 
+  onNavigate, 
+  onAddTransaction, 
+  onAddProduct, 
+  onRefreshAll, 
+  onToggleMenu 
+}) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState<string>('Appuyez pour parler');
@@ -67,15 +75,19 @@ const VoiceScreen: React.FC<Props> = ({ onNavigate, onAddTransaction, onToggleMe
       const response = await voice.send(formData);
       const result = response.data;
 
-      if (result.status === 'success' && result.transaction) {
+      if (result.status === 'success' && (result.transaction || result.product)) {
         setTranscription(result.transcription);
-        setStatus("Transaction ajoutée !");
+        
+        if (result.transaction) {
+          setStatus("Transaction ajoutée !");
+          onAddTransaction(result.transaction);
+        } else if (result.product) {
+          setStatus("Produit ajouté !");
+          onAddProduct(result.product);
+        }
 
-        // Add to local state/context if needed, though backend has it now.
-        // We might want to show a success message or navigate.
-        // onAddTransaction is likely for optimistic UI or local state update.
-        // Let's call it to update the UI.
-        onAddTransaction(result.transaction);
+        // Global refresh to update dashboard and management tabs
+        onRefreshAll();
 
         setTimeout(() => {
           setStatus("Appuyez pour parler");
@@ -115,11 +127,20 @@ const VoiceScreen: React.FC<Props> = ({ onNavigate, onAddTransaction, onToggleMe
       const response = await voice.send({ text: manualInput });
       const result = response.data;
 
-      if (result.status === 'success' && result.transaction) {
+      if (result.status === 'success' && (result.transaction || result.product)) {
         setTranscription(result.transcription);
-        setStatus("Transaction ajoutée !");
-        onAddTransaction(result.transaction);
+        
+        if (result.transaction) {
+          setStatus("Transaction ajoutée !");
+          onAddTransaction(result.transaction);
+        } else if (result.product) {
+          setStatus("Produit ajouté !");
+          onAddProduct(result.product);
+        }
+
+        onRefreshAll();
         setManualInput('');
+        
         setTimeout(() => {
           setStatus("Appuyez pour parler");
           setTranscription('');

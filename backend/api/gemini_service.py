@@ -26,7 +26,7 @@ class GeminiService:
         
         self.client = genai.Client(api_key=self.api_key)
         # Use free tier model with generous quotas
-        self.model = "gemini-flash-latest"  # Free tier: 15 RPM, 1M tokens/day
+        self.model = "gemini-1.5-flash-latest"  # Stable and standard model name
 
     def process_voice_command(self, audio_bytes, mime_type="audio/mp3", context_products=None):
         """
@@ -69,11 +69,11 @@ class GeminiService:
         
         Important: If a product price is found in the inventory list, ALWAYS calculate: amount = quantity * unit_price.
         
-        If the audio is not clear or not related to a transaction, return:
+        If the audio is not in French or English, or is not clear or not related to a transaction, return:
         {{
             "transcription": "...",
             "intent": "unknown",
-            "error": "Reason"
+            "error": "The detected language is not supported. Please speak in French or English."
         }}
         """
 
@@ -162,11 +162,11 @@ class GeminiService:
             }}
         }}
         
-        If the text is not clear, return:
+        If the text is not in French or English, or is not clear, return:
         {{
             "transcription": "...",
             "intent": "unknown",
-            "error": "Reason"
+            "error": "The language is not supported. Please use French or English."
         }}
         """
 

@@ -14,6 +14,7 @@ import csv
 import hashlib
 import json
 from django.http import HttpResponse
+from django.conf import settings
 
 from .models import Product, Transaction, Budget, Ad, Notification, SupportTicket, AIInsight
 from .serializers import (
@@ -24,6 +25,8 @@ from .serializers import (
     BalanceHistorySerializer, NotificationSerializer, SupportTicketSerializer
 )
 from .gemini_service import GeminiService
+from .groq_service import GroqService
+from .assemblyai_service import AssemblyAIService
 import tempfile
 import os
 
@@ -606,12 +609,90 @@ class VoiceCommandView(APIView):
             ]
             print(f"VoiceCommandView - Context Products: {products_list}")
             
+            debug_url = None
             if audio_file:
-                audio_bytes = audio_file.read()
-                mime_type = audio_file.content_type or 'audio/mp3'
-                result = service.process_voice_command(audio_bytes, mime_type, context_products=products_list)
+                # --- DEBUG: Sauvegarder l'audio pour vérification ---
+                try:
+                    debug_dir = os.path.join(settings.MEDIA_ROOT, 'debug_voice')
+                    os.makedirs(debug_dir, exist_ok=True)
+                    
+                    # Nettoyer le nom du fichier et ajouter un timestamp
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    debug_filename = f"voice_{timestamp}_{audio_file.name}"
+                    debug_path = os.path.join(debug_dir, debug_filename)
+                    
+                    with open(debug_path, 'wb+') as destination:
+                        for chunk in audio_file.chunks():
+                            destination.write(chunk)
+                    
+                    debug_url = f"{request.build_absolute_uri(settings.MEDIA_URL)}debug_voice/{debug_filename}"
+                    print(f"DEBUG AUDIO SAVED: {debug_path}")
+                    
+                    # Important: Réinitialiser le curseur après la sauvegarde pour Groq/Gemini
+                    audio_file.seek(0)
+                except Exception as e:
+                    print(f"Error saving debug audio: {e}")
+                # --- FIN DEBUG ---
+
+                # Primary attempt: AssemblyAI (User's choice)
+                print(f"Using AssemblyAI STT as primary")
+                user_lang = getattr(request.user, 'language', 'fr').lower()
+                audio_file.seek(0)
+                assembly_service = AssemblyAIService()
+                transcription = assembly_service.transcribe(audio_file, language=user_lang)
+                used_provider = "AssemblyAI"
+                
+                if not transcription:
+                    # Fallback 1: Groq
+                    print(f"AssemblyAI STT failed, trying Groq as fallback with language: {user_lang}")
+                    audio_file.seek(0)
+                    groq_service = GroqService()
+                    transcription = groq_service.transcribe(audio_file, language=user_lang)
+                    used_provider = "Groq"
+                
+                if transcription:
+                    print(f"Transcription successful ({used_provider}): {transcription}")
+                    
+                    # LLM Processing Fallback Chain
+                    result = None
+                    groq_service = GroqService() # reusing the service
+                    
+                    # Try Llama 3.3 70B
+                    print("Attempting processing with llama-3.3-70b-versatile...")
+                    result = groq_service.process_text_command(transcription, context_products=products_list, model="llama-3.3-70b-versatile")
+                    
+                    if not result:
+                        # Try Llama 3.1 8B
+                        print("Llama 3.3 70B failed, attempting with llama-3.1-8b-instant...")
+                        result = groq_service.process_text_command(transcription, context_products=products_list, model="llama-3.1-8b-instant")
+                    
+                    if not result:
+                        # Final resort: Gemini
+                        print("All Groq LLMs failed, falling back to Gemini...")
+                        gemini_service = GeminiService()
+                        result = gemini_service.process_text_command(transcription, context_products=products_list)
+                else:
+                    # Fallback 2: Gemini's native voice processing
+                    print("All STT services failed, falling back to Gemini native voice command")
+                    audio_file.seek(0)
+                    audio_bytes = audio_file.read()
+                    mime_type = audio_file.content_type or 'audio/mp3'
+                    gemini_service = GeminiService()
+                    result = gemini_service.process_voice_command(audio_bytes, mime_type, context_products=products_list)
             else:
-                result = service.process_text_command(text_command, context_products=products_list)
+                # Direct text command processing with the same chain
+                groq_service = GroqService()
+                print("Processing text command with llama-3.3-70b-versatile...")
+                result = groq_service.process_text_command(text_command, context_products=products_list, model="llama-3.3-70b-versatile")
+                
+                if not result:
+                    print("Llama 3.3 70B failed, trying llama-3.1-8b-instant...")
+                    result = groq_service.process_text_command(text_command, context_products=products_list, model="llama-3.1-8b-instant")
+                
+                if not result:
+                    print("All Groq LLMs failed, falling back to Gemini...")
+                    gemini_service = GeminiService()
+                    result = gemini_service.process_text_command(text_command, context_products=products_list)
             
             print(f"VoiceCommandView - Result Intent: {result.get('intent')}")
             
@@ -619,14 +700,31 @@ class VoiceCommandView(APIView):
                 data = result.get('data', {})
                 print(f"VoiceCommandView - Transaction Data: {data}")
                 
-                # Prepare data for serializer
+                # Ensure date is a full datetime string for TransactionSerializer
+                raw_date = data.get('date')
+                final_datetime = timezone.now() # Already aware if USE_TZ=True
+                
+                if raw_date:
+                    try:
+                        # If AI gives YYYY-MM-DD, combine with current time
+                        parsed_date = datetime.strptime(raw_date, '%Y-%m-%d').date()
+                        # Make sure we create an aware datetime to avoid warnings
+                        naive_dt = datetime.combine(parsed_date, timezone.now().time())
+                        final_datetime = timezone.make_aware(naive_dt)
+                    except:
+                        pass
+                
+                # Prepare naming with fallback to transcription
+                transcription_text = result.get('transcription', '')
+                default_name = (transcription_text[:20] + '...') if len(transcription_text) > 20 else transcription_text
+                
                 transaction_data = {
-                    'name': data.get('name', 'Transaction Vocale'),
+                    'name': data.get('name') or default_name or 'Transaction Vocale',
                     'amount': data.get('amount'),
                     'type': data.get('type'),
                     'category': data.get('category', 'Divers'),
                     'currency': data.get('currency', 'FCFA'),
-                    'date': data.get('date') or timezone.now().date()
+                    'date': final_datetime
                 }
                 
                 # Use serializer to validate and save
@@ -639,7 +737,8 @@ class VoiceCommandView(APIView):
                     return Response({
                         'status': 'success',
                         'transcription': result.get('transcription'),
-                        'transaction': serializer.data
+                        'transaction': serializer.data,
+                        'debug_audio_url': debug_url
                     })
                 else:
                      print(f"VoiceCommandView - Serializer Errors: {serializer.errors}")
@@ -674,7 +773,8 @@ class VoiceCommandView(APIView):
                     return Response({
                         'status': 'success',
                         'transcription': result.get('transcription'),
-                        'product': serializer.data
+                        'product': serializer.data,
+                        'debug_audio_url': debug_url
                     })
                 else:
                     print(f"VoiceCommandView - Product Serializer Errors: {serializer.errors}")
@@ -690,7 +790,8 @@ class VoiceCommandView(APIView):
                 'transcription': result.get('transcription'),
                 'intent': result.get('intent'),
                 'data': result.get('data'),
-                'error': result.get('error')
+                'error': result.get('error'),
+                'debug_audio_url': debug_url
             })
             
         except Exception as e:
